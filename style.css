@@ -19,7 +19,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #1c1b19;
     --surface: #262522;
     --surface-2: #302e2a;
@@ -36,6 +36,24 @@
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
     color-scheme: dark;
   }
+}
+
+:root[data-theme="dark"] {
+  --bg: #1c1b19;
+  --surface: #262522;
+  --surface-2: #302e2a;
+  --text: #ece8e1;
+  --muted: #a39d93;
+  --border: #3d3a35;
+  --accent: #5fa56e;
+  --accent-text: #0f1a11;
+  --danger: #e0685f;
+  --good: #6cc481;
+  --bad: #ef7064;
+  --info: #7fb0ea;
+  --warn-bg: #3a3320;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -61,7 +79,7 @@ p { margin: 0 0 0.75rem; }
 .topbar {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
   padding: 0.7rem 1.25rem; background: var(--surface); border-bottom: 1px solid var(--border);
-  position: sticky; top: 0; z-index: 10;
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10;
 }
 .brand { font-weight: 700; font-size: 1.1rem; text-decoration: none; }
 .topbar nav { display: flex; gap: 1rem; }
@@ -213,7 +231,7 @@ textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, m
 @media (max-width: 900px) {
   .split { grid-template-columns: 1fr; }
   .board-col { max-width: 560px; }
-  main { padding: 1rem 0.75rem 3rem; }
+  main { padding: 1rem 1rem 3rem; }
 }
 
 @media (max-width: 480px) {

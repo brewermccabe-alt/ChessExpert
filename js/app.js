@@ -3,6 +3,13 @@
   const app = document.getElementById('app');
   let data = Rep.load();
   let cleanup = null; // teardown for the current view
+  let currentRoute = location.hash.startsWith('#/') ? location.hash : '#/';
+
+  function navigate(hash) {
+    currentRoute = hash;
+    try { history.pushState(null, '', hash); } catch (e) { /* URL can't change here; in-memory route still works */ }
+    route();
+  }
 
   /* ---------- helpers ---------- */
 
@@ -34,6 +41,31 @@
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+  }
+
+  // Show exported text with Copy (always works) and Download (hidden where downloads are blocked).
+  function exportDialog(title, filename, text, type) {
+    modal(`
+      <h2>${esc(title)}</h2>
+      <textarea id="export-text" rows="12" readonly>${esc(text)}</textarea>
+      <div class="row end">
+        <button data-close class="btn">Close</button>
+        ${window.NO_DOWNLOAD ? '' : '<button class="btn" id="dl">Download file</button>'}
+        <button class="btn primary" id="copy">Copy</button>
+      </div>`,
+      (m) => {
+        const ta = m.querySelector('#export-text');
+        m.querySelector('#copy').onclick = () => {
+          const fallback = () => { ta.focus(); ta.select(); toast('Press Ctrl+C (or ⌘C) to copy the selected text.'); };
+          try {
+            navigator.clipboard.writeText(text).then(() => toast('Copied to clipboard.'), fallback);
+          } catch (e) {
+            fallback();
+          }
+        };
+        const dl = m.querySelector('#dl');
+        if (dl) dl.onclick = () => download(filename, text, type);
+      });
   }
 
   function slug(s) {
@@ -171,7 +203,7 @@
     app.querySelector('#new').onclick = newRepDialog;
     app.querySelector('#sample').onclick = sampleDialog;
     app.querySelector('#export-all').onclick = () => {
-      download(`opening-trainer-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data), 'application/json');
+      exportDialog('Backup', `opening-trainer-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data), 'application/json');
     };
     app.querySelector('#import-all').onchange = async (e) => {
       const f = e.target.files[0];
@@ -213,7 +245,7 @@
           if (n) { rep.name = n; persist(); close(); viewHome(); }
         };
         m.querySelector('#imp').onclick = () => { close(); importDialog(rep, viewHome); };
-        m.querySelector('#exp').onclick = () => download(`${slug(rep.name)}.pgn`, Rep.exportPgn(rep));
+        m.querySelector('#exp').onclick = () => { close(); exportDialog(`PGN for “${rep.name}”`, `${slug(rep.name)}.pgn`, Rep.exportPgn(rep)); };
         m.querySelector('#reset').onclick = async () => {
           close();
           if (await confirmBox(`Reset all training progress for “${rep.name}”? Moves are kept.`, 'Reset')) {
@@ -249,7 +281,7 @@
           data.repertoires.push(rep);
           persist();
           close();
-          location.hash = `#/edit/${rep.id}`;
+          navigate(`#/edit/${rep.id}`);
         };
         m.querySelector('#create').onclick = go;
         m.querySelector('#name').onkeydown = (e) => { if (e.key === 'Enter') go(); };
@@ -428,7 +460,7 @@
     app.querySelector('#fwd').onclick = fwd;
     app.querySelector('#flip').onclick = () => board.flip();
     app.querySelector('#imp').onclick = () => importDialog(rep, () => goTo(path));
-    app.querySelector('#exp').onclick = () => download(`${slug(rep.name)}.pgn`, Rep.exportPgn(rep));
+    app.querySelector('#exp').onclick = () => exportDialog(`PGN for “${rep.name}”`, `${slug(rep.name)}.pgn`, Rep.exportPgn(rep));
 
     const onKey = (e) => {
       if (/INPUT|TEXTAREA/.test(document.activeElement.tagName) || document.getElementById('modal-root').children.length) return;
@@ -605,7 +637,7 @@
   function route() {
     if (cleanup) { cleanup(); cleanup = null; }
     document.getElementById('modal-root').innerHTML = '';
-    const parts = location.hash.replace(/^#\/?/, '').split('/');
+    const parts = currentRoute.replace(/^#\/?/, '').split('/');
     const rep = parts[1] ? findRep(parts[1]) : null;
     if (parts[0] === 'edit' && rep) viewEditor(rep);
     else if (parts[0] === 'train' && rep) viewTrain(rep, ['review', 'learn', 'drill'].includes(parts[2]) ? parts[2] : 'review');
@@ -618,10 +650,20 @@
   window.addEventListener('storage', (e) => {
     if (e.key && e.key.startsWith('openingTrainer')) {
       data = Rep.load();
-      if (!location.hash.startsWith('#/train')) route();
+      if (!currentRoute.startsWith('#/train')) route();
     }
   });
 
-  window.addEventListener('hashchange', route);
+  // In-page navigation: links use href="#/…", handled here so it also works where the URL can't change.
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a[href^="#/"]');
+    if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey) return;
+    e.preventDefault();
+    navigate(a.getAttribute('href'));
+  });
+  window.addEventListener('popstate', () => {
+    currentRoute = location.hash || '#/';
+    route();
+  });
   route();
 })();

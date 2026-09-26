@@ -182,13 +182,13 @@
           </div>
           <div class="row wrap">
             <button class="btn primary" id="new">+ New repertoire</button>
-            <button class="btn" id="sample">Load a sample</button>
+            <button class="btn" id="sample">Opening library</button>
           </div>
         </div>
         ${reps.length ? `<div class="rep-grid">${cards}</div>` : `
           <div class="empty">
             <p>No repertoires yet.</p>
-            <p class="muted">Create one and start playing moves on the board, import a PGN, or load a sample to try it out.</p>
+            <p class="muted">Pick ready-made openings from the library, create your own by playing moves on the board, or import a PGN.</p>
           </div>`}
         <div class="backup">
           <h2>Backup</h2>
@@ -201,7 +201,7 @@
       </section>`;
 
     app.querySelector('#new').onclick = newRepDialog;
-    app.querySelector('#sample').onclick = sampleDialog;
+    app.querySelector('#sample').onclick = libraryDialog;
     app.querySelector('#export-all').onclick = () => {
       exportDialog('Backup', `opening-trainer-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data), 'application/json');
     };
@@ -289,24 +289,74 @@
       });
   }
 
-  function sampleDialog() {
+  // Count the user's moves in a library opening (cached; the library never changes at runtime).
+  const libraryCounts = new Map();
+  function libraryMoveCount(s) {
+    if (!libraryCounts.has(s.name)) {
+      const tmp = Rep.newRepertoire(s.name, s.color);
+      Rep.importPgn(tmp, s.pgn);
+      libraryCounts.set(s.name, Rep.stats(tmp).total);
+    }
+    return libraryCounts.get(s.name);
+  }
+
+  function addFromLibrary(s) {
+    const rep = Rep.newRepertoire(s.name, s.color);
+    rep.library = s.name;
+    Rep.importPgn(rep, s.pgn);
+    data.repertoires.push(rep);
+    return rep;
+  }
+
+  function libraryDialog() {
+    const added = new Set(data.repertoires.map((r) => r.library).filter(Boolean));
+    const group = (color, label) => `
+      <h3>${label}</h3>
+      <div class="lib-list">
+        ${SAMPLES.map((s, i) => (s.color !== color ? '' : `
+          <div class="lib-item">
+            <div class="lib-text">
+              <b>${esc(s.name)}</b>
+              <span class="muted small">${esc(s.desc || '')}</span>
+              <span class="muted small">${libraryMoveCount(s)} moves to learn</span>
+            </div>
+            ${added.has(s.name)
+              ? '<span class="lib-added">Added ✓</span>'
+              : `<button class="btn" data-i="${i}">Add</button>`}
+          </div>`)).join('')}
+      </div>`;
+    const remaining = SAMPLES.filter((s) => !added.has(s.name)).length;
     modal(`
-      <h2>Load a sample repertoire</h2>
-      <div class="menu-list">
-        ${SAMPLES.map((s, i) => `<button class="btn" data-i="${i}">${esc(s.name)}</button>`).join('')}
-      </div>
-      <div class="row end"><button data-close class="btn">Cancel</button></div>`,
+      <h2>Opening library</h2>
+      <p class="muted small">Ready-made repertoires of standard opening theory. Each one is added as your own repertoire, so you can edit it however you like.</p>
+      ${group('w', 'Play as White')}
+      ${group('b', 'Play as Black')}
+      <div class="row end">
+        <button data-close class="btn">Close</button>
+        ${remaining ? `<button class="btn primary" id="add-all">Add all ${remaining}</button>` : ''}
+      </div>`,
       (m, close) => {
         m.querySelectorAll('[data-i]').forEach((b) => (b.onclick = () => {
           const s = SAMPLES[+b.dataset.i];
-          const rep = Rep.newRepertoire(s.name, s.color);
-          Rep.importPgn(rep, s.pgn);
-          data.repertoires.push(rep);
+          addFromLibrary(s);
+          persist();
+          b.outerHTML = '<span class="lib-added">Added ✓</span>';
+          const left = SAMPLES.length - new Set(data.repertoires.map((r) => r.library).filter(Boolean)).size;
+          const all = m.querySelector('#add-all');
+          if (all) { if (left) all.textContent = `Add all ${left}`; else all.remove(); }
+          viewHome();
+          toast(`Added “${s.name}”.`);
+        }));
+        const all = m.querySelector('#add-all');
+        if (all) all.onclick = () => {
+          const have = new Set(data.repertoires.map((r) => r.library).filter(Boolean));
+          let n = 0;
+          for (const s of SAMPLES) if (!have.has(s.name)) { addFromLibrary(s); n++; }
           persist();
           close();
           viewHome();
-          toast(`Loaded “${s.name}”.`);
-        }));
+          toast(`Added ${n} opening${n === 1 ? '' : 's'}.`);
+        };
       });
   }
 

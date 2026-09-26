@@ -11,7 +11,7 @@ A free, open-source chess opening repertoire builder and trainer. Build your lin
 - **Learn mode:** walks you through new lines and shows each new move with an arrow.
 - **Spaced-repetition review:** each of your moves is scheduled SM-2 style (1 day → 3 days → growing intervals). Moves you miss come back in minutes and get retried in the same session.
 - **Drill all:** quiz the whole repertoire without changing your schedule.
-- **Sample repertoires:** Italian Game, Caro-Kann, and QGD, so you can try it right away.
+- **Opening library:** 14 ready-made repertoires you can add with one click and then edit. As White: Italian, Ruy Lopez, Scotch, London, Queen's Gambit and the Alapin vs the Sicilian. As Black: Sicilian Najdorf, French, Caro-Kann, Scandinavian, Queen's Gambit Declined, Slav, King's Indian and Nimzo-Indian.
 - **Backup/restore** everything as a JSON file.
 - Works offline, on desktop or mobile, in light or dark mode.
 
@@ -33,7 +33,7 @@ js/board.js       interactive board (click and drag, arrows, promotion)
 js/repertoire.js  data model, spaced repetition, PGN import/export, storage
 js/trainer.js     training session logic
 js/app.js         views and routing
-js/samples.js     starter repertoires
+js/samples.js     opening library
 js/pieces.js      piece artwork
 vendor/chess.js   chess.js 1.4.0 (move generation and validation)
 ```

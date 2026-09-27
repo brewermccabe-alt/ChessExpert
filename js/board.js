@@ -76,6 +76,12 @@
       this.lastMove = from ? { from, to } : null;
     }
 
+    // Keep one square highlighted (e.g. a hint) until cleared with setHint(null).
+    setHint(square) {
+      this.hint = square;
+      this._renderSquares();
+    }
+
     setArrows(arrows) {
       this.arrows = arrows || [];
       this._renderArrows();
@@ -128,6 +134,7 @@
           const p = chess.get(sq);
           if (inCheck && p && p.type === 'k' && p.color === turn) cls.push('check');
           if (this.marks[sq]) cls.push('mark-' + this.marks[sq]);
+          else if (this.hint === sq) cls.push('mark-hint');
           d.className = cls.join(' ');
           let label = '';
           if (y === 7) label += `<span class="coord file">${sq[0]}</span>`;

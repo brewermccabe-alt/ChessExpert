@@ -707,6 +707,269 @@
     trainer.start();
   }
 
+  /* ---------- Puzzles ---------- */
+
+  const THEME_LABELS = {
+    all: 'All puzzles', mate: 'Checkmate', mateIn1: 'Mate in 1', mateIn2: 'Mate in 2', mateIn3: 'Mate in 3+',
+    fork: 'Fork', hangingPiece: 'Hanging piece', sacrifice: 'Sacrifice', promotion: 'Promotion',
+    quietMove: 'Quiet move', endgame: 'Endgame', oneMove: 'One move', short: 'Two moves', long: 'Three moves or more',
+  };
+
+  function puzzleState() {
+    if (!data.puzzles) data.puzzles = {};
+    const p = data.puzzles;
+    p.rating = p.rating || 1200;
+    p.played = p.played || 0;
+    p.solved = p.solved || 0;
+    p.streak = p.streak || 0;
+    p.best = p.best || 0;
+    p.theme = p.theme || 'all';
+    p.history = p.history || {}; // puzzle id -> 1 solved clean, 0 missed
+    p.recent = p.recent || []; // last few puzzle ids, to avoid immediate repeats
+    return p;
+  }
+
+  function puzzleMatches(pz, theme) {
+    if (theme === 'all') return true;
+    if (theme === 'mateIn3') return pz.themes.some((t) => /^mateIn[3-9]/.test(t));
+    return pz.themes.includes(theme);
+  }
+
+  // Pick a puzzle near the player's rating: unseen first, then missed ones, then anything.
+  function nextPuzzle(st) {
+    const pool = PUZZLES.filter((pz) => puzzleMatches(pz, st.theme));
+    if (!pool.length) return null;
+    const recent = new Set(st.recent);
+    const tiers = [
+      (pz) => !(pz.id in st.history),
+      (pz) => st.history[pz.id] === 0,
+      () => true,
+    ];
+    for (const ok of tiers) {
+      for (const width of [150, 300, 500, 900, 5000]) {
+        const c = pool.filter((pz) => ok(pz) && !recent.has(pz.id) && Math.abs(pz.rating - st.rating) <= width);
+        if (c.length) return c[Math.floor(Math.random() * c.length)];
+      }
+    }
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  function viewPuzzles() {
+    const st = puzzleState();
+    let pz = null;
+    let chess = new Chess();
+    let ply = 0; // index into pz.moves of the next move to be played
+    let failed = false;
+    let finished = false;
+    let counted = false; // rating already updated for this puzzle
+    let timer = null;
+    const solverName = () => (chess.turn() === 'w' ? 'White' : 'Black');
+
+    const themeOptions = Object.entries(THEME_LABELS).map(([k, v]) => {
+      const n = PUZZLES.filter((x) => puzzleMatches(x, k)).length;
+      return n ? `<option value="${k}" ${st.theme === k ? 'selected' : ''}>${esc(v)} (${n.toLocaleString()})</option>` : '';
+    }).join('');
+
+    app.innerHTML = `
+      <section class="split">
+        <div class="board-col">
+          <div id="board"></div>
+        </div>
+        <aside class="panel">
+          <div class="panel-head">
+            <h2>Puzzles</h2>
+            <label class="field theme-pick">Theme
+              <select id="theme">${themeOptions}</select>
+            </label>
+          </div>
+          <div class="status" id="status">Loading…</div>
+          <div class="row wrap" id="pz-actions">
+            <button class="btn" id="hint">Hint</button>
+            <button class="btn" id="solution">Show solution</button>
+            <button class="btn" id="retry" hidden>Retry</button>
+            <button class="btn primary" id="next" hidden>Next puzzle</button>
+          </div>
+          <p class="muted small" id="pz-meta"></p>
+          <div class="scores" id="pz-scores"></div>
+        </aside>
+      </section>`;
+
+    const statusEl = app.querySelector('#status');
+    const setStatus = (html, cls = '') => { statusEl.className = 'status ' + cls; statusEl.innerHTML = html; };
+    const btn = (id) => app.querySelector('#' + id);
+
+    const board = new Board(app.querySelector('#board'), {
+      getChess: () => chess,
+      canMove: () => !!pz && !finished && ply % 2 === 1,
+      onMove: (from, to, promotion) => attempt(from, to, promotion),
+    });
+
+    function renderScores() {
+      const acc = st.played ? Math.round((st.solved / st.played) * 100) : 0;
+      app.querySelector('#pz-scores').innerHTML = `
+        <div><b>${Math.round(st.rating)}</b><span>rating</span></div>
+        <div><b>${st.streak}</b><span>streak</span></div>
+        <div><b>${st.best}</b><span>best streak</span></div>
+        <div><b>${acc}%</b><span>of ${st.played}</span></div>`;
+    }
+
+    function setButtons() {
+      btn('hint').hidden = finished;
+      btn('solution').hidden = finished;
+      btn('retry').hidden = !finished || !failed;
+      btn('next').hidden = !finished;
+    }
+
+    // Elo-style update, applied once per puzzle.
+    function score(win) {
+      if (counted) return 0;
+      counted = true;
+      const expected = 1 / (1 + Math.pow(10, (pz.rating - st.rating) / 400));
+      const k = st.played < 10 ? 40 : 24;
+      const delta = Math.round(k * ((win ? 1 : 0) - expected));
+      st.rating = Math.max(100, st.rating + delta);
+      st.played++;
+      if (win) { st.solved++; st.streak++; st.best = Math.max(st.best, st.streak); } else st.streak = 0;
+      st.history[pz.id] = win ? 1 : 0;
+      persist();
+      renderScores();
+      return delta;
+    }
+
+    function playUci(uci) {
+      const mv = chess.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] });
+      chess = new Chess(chess.fen());
+      Sound.forMove(mv);
+      board.setLastMove(mv.from, mv.to);
+      board.setArrows([]);
+      board.hint = null;
+      board.render();
+      ply++;
+      return mv;
+    }
+
+    function load(next) {
+      clearTimeout(timer);
+      pz = next;
+      if (!pz) {
+        setStatus('No puzzles match this theme.', 'info');
+        return;
+      }
+      st.recent = [...st.recent.filter((id) => id !== pz.id), pz.id].slice(-30);
+      app.dataset.puzzle = pz.id;
+      chess = new Chess(pz.fen);
+      ply = 0;
+      failed = false;
+      finished = false;
+      counted = false;
+      const solver = chess.turn() === 'w' ? 'b' : 'w';
+      board.setOrientation(solver);
+      board.setLastMove(null);
+      board.setArrows([]);
+      board.hint = null;
+      board.render();
+      setButtons();
+      const themes = pz.themes.map((t) => THEME_LABELS[t]).filter(Boolean).join(' · ');
+      app.querySelector('#pz-meta').textContent = `Puzzle rating ${pz.rating}${themes ? ' · ' + themes : ''}`;
+      app.querySelector('#pz-meta').hidden = true; // revealed at the end so themes don't give it away
+      setStatus('Watch the opponent’s move…', 'info');
+      timer = setTimeout(() => {
+        playUci(pz.moves[0]);
+        setStatus(`<b>Your turn.</b> Find the best move for ${solverName()}.`);
+      }, 700);
+    }
+
+    function isAccepted(uci, mvIsMate) {
+      const expected = pz.moves[ply];
+      if (uci === expected) return true;
+      if (pz.alts && pz.alts[ply] && pz.alts[ply].includes(uci)) return true;
+      // Any checkmate is right on the final move.
+      return ply === pz.moves.length - 1 && mvIsMate;
+    }
+
+    function attempt(from, to, promotion) {
+      const test = new Chess(chess.fen());
+      let mv;
+      try { mv = test.move({ from, to, promotion }); } catch (e) { return; }
+      const uci = mv.from + mv.to + (mv.promotion || '');
+      if (isAccepted(uci, test.isCheckmate())) {
+        playUci(uci);
+        board.flash(mv.to, 'good');
+        if (ply >= pz.moves.length) return finish(true);
+        setStatus(`✓ <b>${esc(mv.san)}</b> is right. Keep going…`, 'good');
+        timer = setTimeout(() => {
+          playUci(pz.moves[ply]);
+          setStatus(`<b>Your turn.</b> Find the best move for ${solverName()}.`);
+        }, 450);
+      } else {
+        board.flash(from, 'bad');
+        board.flash(to, 'bad');
+        const first = !failed;
+        failed = true;
+        const d = score(false);
+        setStatus(`✗ <b>${esc(mv.san)}</b> isn’t the best move. Try again.${first && d ? ` <span class="delta down">${d}</span>` : ''}`, 'bad');
+        setButtons();
+      }
+    }
+
+    function finish(solved) {
+      finished = true;
+      clearTimeout(timer);
+      let msg;
+      if (solved && !failed) {
+        const d = score(true);
+        msg = `<b>Solved!</b> <span class="delta up">+${d}</span>`;
+        Sound.play('lineComplete');
+      } else if (solved) {
+        msg = '<b>Solved</b>, with some help this time.';
+      } else {
+        msg = 'Here’s the solution.';
+      }
+      setStatus(msg, solved ? 'good' : 'info');
+      app.querySelector('#pz-meta').hidden = false;
+      setButtons();
+    }
+
+    btn('hint').onclick = () => {
+      if (!pz || finished || ply % 2 === 0) return;
+      const from = pz.moves[ply].slice(0, 2);
+      if (!failed) { failed = true; score(false); }
+      board.setHint(from);
+      setStatus(`Hint: move the piece on <b>${from}</b>.`, 'info');
+      setButtons();
+    };
+    btn('solution').onclick = () => {
+      if (!pz || finished) return;
+      clearTimeout(timer);
+      if (!failed) { failed = true; score(false); }
+      finished = true;
+      setButtons();
+      const step = () => {
+        if (ply >= pz.moves.length) return finish(false);
+        playUci(pz.moves[ply]);
+        timer = setTimeout(step, 700);
+      };
+      step();
+    };
+    btn('retry').onclick = () => load(pz);
+    btn('next').onclick = () => load(nextPuzzle(st));
+    app.querySelector('#theme').onchange = (e) => {
+      st.theme = e.target.value;
+      persist();
+      load(nextPuzzle(st));
+    };
+
+    const onKey = (e) => {
+      if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+      if ((e.key === 'Enter' || e.key === 'ArrowRight' || e.key === 'n') && finished) { e.preventDefault(); load(nextPuzzle(st)); }
+    };
+    document.addEventListener('keydown', onKey);
+    cleanup = () => { clearTimeout(timer); document.removeEventListener('keydown', onKey); };
+
+    renderScores();
+    load(nextPuzzle(st));
+  }
+
   /* ---------- Help ---------- */
 
   function viewHelp() {
@@ -723,6 +986,9 @@
         <h2>3. Review</h2>
         <p>Each of your moves is scheduled with spaced repetition. Get it right and the next review is pushed further out (1 day, 3 days, then growing). Miss it and it comes back within minutes and again later in the same session. <b>Review</b> only quizzes moves that are due, auto-playing the rest of the line to get you there.</p>
         <p><b>Drill all</b> quizzes every move in the repertoire without touching your schedule — handy before a tournament.</p>
+        <h2>Puzzles</h2>
+        <p>The <b>Puzzles</b> tab has thousands of tactics puzzles, with no daily limit. Each one starts with your opponent's mistake; find the move that punishes it, then keep finding the best moves until the line is over. You get a puzzle rating that goes up when you solve one cleanly and down when you miss, and new puzzles are picked near your rating. Filter by theme to practise forks, mates, sacrifices and more.</p>
+        <p>The puzzles were generated for this app with the Stockfish chess engine: it played thousands of games, and positions where a tempting move loses to exactly one winning reply became puzzles. Ratings are estimates.</p>
         <h2>Your data</h2>
         <p>Everything is stored locally in your browser — no account, no server, no paywall. Use <b>Export backup</b> on the home page to save a copy or move it to another device, and <b>Export PGN</b> to use your repertoire elsewhere.</p>
         <h2>Sounds</h2>
@@ -736,12 +1002,14 @@
 
   function route() {
     if (cleanup) { cleanup(); cleanup = null; }
+    delete app.dataset.puzzle;
     document.getElementById('modal-root').innerHTML = '';
     const parts = currentRoute.replace(/^#\/?/, '').split('/');
     const rep = parts[1] ? findRep(parts[1]) : null;
     if (parts[0] === 'edit' && rep) viewEditor(rep);
     else if (parts[0] === 'train' && rep) viewTrain(rep, ['review', 'learn', 'drill'].includes(parts[2]) ? parts[2] : 'review');
     else if (parts[0] === 'help') viewHelp();
+    else if (parts[0] === 'puzzles') viewPuzzles();
     else viewHome();
     window.scrollTo(0, 0);
   }

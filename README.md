@@ -14,6 +14,7 @@ A free, open-source chess opening repertoire builder and trainer. Build your lin
 - **Move-by-move notes:** every move in the library has a short explanation. Learn mode shows why a new move is played before you play it; reviews show it after you answer.
 - **Opening library:** 14 ready-made repertoires you can add with one click and then edit. As White: Italian, Ruy Lopez, Scotch, London, Queen's Gambit and the Alapin vs the Sicilian. As Black: Sicilian Najdorf, French, Caro-Kann, Scandinavian, Queen's Gambit Declined, Slav, King's Indian and Nimzo-Indian.
 - **Backup/restore** everything as a JSON file.
+- **Unlimited tactics puzzles:** thousands of puzzles with no daily limit, a puzzle rating that adapts to you, theme filters (mates, forks, sacrifices, hanging pieces, endgames and more), hints and solutions. See [Puzzles](#puzzles) below.
 - **Sound effects** for moves, captures, checks and checkmate, a ding when you finish a line, and a fanfare when you finish a session. A volume slider and mute button sit in the top bar.
 - Works offline, on desktop or mobile, in light or dark mode.
 
@@ -37,9 +38,23 @@ js/repertoire.js  data model, spaced repetition, PGN import/export, storage
 js/trainer.js     training session logic
 js/app.js         views and routing
 js/samples.js     opening library
+js/puzzles.js     puzzle set (generated, see below)
 js/pieces.js      piece artwork
 vendor/chess.js   chess.js 1.4.0 (move generation and validation)
 ```
+
+## Puzzles
+
+The puzzles are original: `tools/puzzlegen.js` has the [Stockfish](https://stockfishchess.org) engine play games from varied openings, including the library lines. At every position it checks the engine's top 8 moves for a tempting one that actually loses. If a deep search then finds exactly one winning reply, the position becomes a puzzle. The solution continues while each move is the only good one. Every puzzle must end in checkmate or win at least two points of material, counted after the opponent's best reply. Ratings are estimates from each puzzle's length and features, spread over a 500–2500 scale.
+
+To make more (a native Stockfish binary is needed):
+
+```
+node tools/puzzlegen.js /path/to/stockfish out.jsonl 200 some-seed     # one process per CPU core
+node tools/build-puzzles.js js/puzzles.js out*.jsonl                    # validates, dedupes, rates
+```
+
+Puzzle ids come from the position and first move, so rebuilding keeps each player's progress.
 
 ## Credits
 

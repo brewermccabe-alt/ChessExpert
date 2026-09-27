@@ -12,6 +12,9 @@
     return orientation === 'w' ? FILES[x] + (8 - y) : FILES[7 - x] + (y + 1);
   }
 
+  const ANIM_MS = 200; // keep in sync with the .piece.anim transition in style.css
+  const REDUCED_MOTION = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
+
   function pieceSvg(code) {
     return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">${window.PIECE_SVG[code]}</svg>`;
   }
@@ -61,6 +64,7 @@
 
     setOrientation(o) {
       this.orientation = o;
+      this.instant = true; // flipping the board shouldn't send every piece flying
       this.render();
     }
 
@@ -133,19 +137,67 @@
       }
     }
 
+    _placePiece(el, sq) {
+      const { x, y } = sqXY(sq, this.orientation);
+      el.dataset.sq = sq;
+      el.style.transform = `translate(${x * 100}%,${y * 100}%)`;
+    }
+
+    // Reuse piece elements between positions so moved pieces can slide to their new squares.
     _renderPieces() {
       const chess = this.opts.getChess();
-      const board = chess.board();
-      let html = '';
-      for (const row of board) {
-        for (const p of row) {
-          if (!p) continue;
-          const { x, y } = sqXY(p.square, this.orientation);
-          const hidden = this.drag && this.drag.from === p.square ? ' dragging-src' : '';
-          html += `<div class="piece${hidden}" data-sq="${p.square}" style="transform:translate(${x * 100}%,${y * 100}%)">${pieceSvg(p.color + p.type)}</div>`;
-        }
+      const wanted = [];
+      for (const row of chess.board()) for (const p of row) if (p) wanted.push({ sq: p.square, code: p.color + p.type });
+
+      const animate = !this.instant && !REDUCED_MOTION.matches;
+      const dropped = this.dropped; // a piece the user just dragged is already where it belongs
+      this.instant = false;
+      this.dropped = null;
+
+      // 1. Pieces that didn't move keep their element.
+      const old = [...this.piecesEl.querySelectorAll('.piece:not(.leaving)')];
+      const unmatched = [];
+      for (const w of wanted) {
+        const i = old.findIndex((el) => el.dataset.sq === w.sq && el.dataset.code === w.code);
+        if (i >= 0) old.splice(i, 1);
+        else unmatched.push(w);
       }
-      this.piecesEl.innerHTML = html;
+
+      // 2. Each piece that arrived on a new square takes the nearest leftover piece of the same kind.
+      const dist = (a, b) => Math.hypot(FILES.indexOf(a[0]) - FILES.indexOf(b[0]), a[1] - b[1]);
+      for (const w of unmatched) {
+        let best = -1;
+        for (let i = 0; i < old.length; i++) {
+          if (old[i].dataset.code !== w.code) continue;
+          if (best < 0 || dist(old[i].dataset.sq, w.sq) < dist(old[best].dataset.sq, w.sq)) best = i;
+        }
+        let el;
+        if (best >= 0) {
+          el = old.splice(best, 1)[0];
+          const skip = !animate || (dropped && dropped.from === el.dataset.sq && dropped.to === w.sq);
+          el.classList.toggle('anim', !skip);
+          if (!skip) {
+            clearTimeout(el._animTimer);
+            el._animTimer = setTimeout(() => el.classList.remove('anim'), ANIM_MS + 50);
+          }
+        } else {
+          // Nothing to slide from (promotion, or a position set from scratch): just appear.
+          el = document.createElement('div');
+          el.className = 'piece';
+          el.dataset.code = w.code;
+          el.innerHTML = pieceSvg(w.code);
+          this.piecesEl.appendChild(el);
+        }
+        el.classList.remove('dragging-src');
+        this._placePiece(el, w.sq);
+      }
+
+      // 3. Whatever is left was captured (or is gone): fade it out.
+      for (const el of old) {
+        if (!animate) { el.remove(); continue; }
+        el.classList.add('leaving');
+        setTimeout(() => el.remove(), ANIM_MS);
+      }
     }
 
     _renderArrows() {
@@ -205,7 +257,7 @@
       this.selected = sq;
       this._renderSquares();
 
-      const pieceEl = this.piecesEl.querySelector(`[data-sq="${sq}"]`);
+      const pieceEl = this.piecesEl.querySelector(`.piece:not(.leaving)[data-sq="${sq}"]`);
       const ghost = document.createElement('div');
       ghost.className = 'piece ghost';
       ghost.innerHTML = pieceSvg(p.color + p.type);
@@ -237,6 +289,7 @@
         const to = this._sqFromEvent(e);
         if (to && to !== d.from) {
           this.selected = null;
+          this.dropped = { from: d.from, to };
           this._tryMove(d.from, to);
           return;
         }

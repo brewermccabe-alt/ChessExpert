@@ -426,6 +426,7 @@
     }
 
     function goTo(newPath, mv) {
+      const steppedForward = newPath.length === path.length + 1;
       path = newPath;
       chess = new Chess(curFen());
       if (mv === undefined && path.length) {
@@ -433,6 +434,7 @@
         mv = new Chess(prev).move(path[path.length - 1].san);
       }
       lastMove = mv || null;
+      if (steppedForward) Sound.forMove(lastMove);
       board.setLastMove(lastMove && lastMove.from, lastMove && lastMove.to);
       board.setArrows([]);
       board.render();
@@ -589,6 +591,7 @@
     const trainer = new Trainer(rep, mode, {
       onPosition(c, mv) {
         chess = new Chess(c.fen());
+        Sound.forMove(mv);
         board.setLastMove(mv && mv.from, mv && mv.to);
         board.setArrows([]);
         board.render();
@@ -623,6 +626,7 @@
         prompting = false;
         setStatus('Line complete ✓', 'good');
         renderScores();
+        setTimeout(() => Sound.play('lineComplete'), 250); // let the last move's sound finish first
       },
       onDone(stats, immediately) {
         prompting = false;
@@ -632,6 +636,7 @@
           setStatus(mode === 'review' ? `Nothing is due right now. ${s.fresh ? `You have ${s.fresh} new moves to learn.` : ''}` :
             mode === 'learn' ? 'No new moves to learn — add more lines in the editor.' : 'This repertoire has no moves yet.', 'info');
         } else {
+          Sound.play('sessionComplete');
           setStatus(`<b>Session complete!</b> ${stats.correct} correct, ${stats.wrong} mistake${stats.wrong === 1 ? '' : 's'}, ${stats.learned} learned.`, 'good');
         }
         const actions = [];
@@ -677,6 +682,8 @@
         <p><b>Drill all</b> quizzes every move in the repertoire without touching your schedule — handy before a tournament.</p>
         <h2>Your data</h2>
         <p>Everything is stored locally in your browser — no account, no server, no paywall. Use <b>Export backup</b> on the home page to save a copy or move it to another device, and <b>Export PGN</b> to use your repertoire elsewhere.</p>
+        <h2>Sounds</h2>
+        <p>Moves, captures, checks and checkmates each have their own sound. A ding plays when you finish a line, and a fanfare when you finish the whole session. Use the speaker button in the top bar to turn sound off or on.</p>
         <h2>Keyboard</h2>
         <p>In the editor: ← / → to step through moves, Home to go to the start, F to flip the board.</p>
       </section>`;
@@ -711,6 +718,16 @@
     e.preventDefault();
     navigate(a.getAttribute('href'));
   });
+  const soundBtn = document.getElementById('sound-toggle');
+  const renderSoundBtn = () => {
+    const on = Sound.isEnabled();
+    soundBtn.innerHTML = on ? '🔊<span class="lbl"> Sound on</span>' : '🔇<span class="lbl"> Sound off</span>';
+    soundBtn.setAttribute('aria-label', on ? 'Sound on' : 'Sound off');
+    soundBtn.setAttribute('aria-pressed', String(on));
+  };
+  soundBtn.onclick = () => { Sound.setEnabled(!Sound.isEnabled()); renderSoundBtn(); };
+  renderSoundBtn();
+
   window.addEventListener('popstate', () => {
     currentRoute = location.hash || '#/';
     route();

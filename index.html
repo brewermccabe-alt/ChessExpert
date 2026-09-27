@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Opening Trainer</title>
-  <meta name="description" content="Free, offline chess opening repertoire builder and spaced-repetition trainer.">
+  <meta name="description" content="Free chess opening repertoire builder and spaced-repetition trainer, plus a screen coach that reads your game and suggests the best moves.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'><rect width='8' height='8' fill='%23b58863'/><rect width='4' height='4' fill='%23f0d9b5'/><rect x='4' y='4' width='4' height='4' fill='%23f0d9b5'/></svg>">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -13,6 +13,7 @@
     <a href="#/" class="brand">♞ Opening Trainer</a>
     <nav>
       <a href="#/" class="nav-home">Repertoires</a>
+      <a href="#/coach">Coach</a>
       <a href="#/help"><span class="long">How it works</span><span class="short">Help</span></a>
       <div class="volume">
         <button id="sound-toggle" class="sound-toggle" type="button" title="Mute or unmute"></button>
@@ -25,12 +26,17 @@
   <div id="toast"></div>
 
   <script src="vendor/chess.js"></script>
+  <script src="vendor/openings.js"></script>
   <script src="js/pieces.js"></script>
   <script src="js/sounds.js"></script>
   <script src="js/board.js"></script>
   <script src="js/repertoire.js"></script>
   <script src="js/trainer.js"></script>
   <script src="js/samples.js"></script>
+  <script src="js/vision.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/coach.js"></script>
+  <script src="js/coach-view.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

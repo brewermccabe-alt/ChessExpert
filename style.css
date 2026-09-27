@@ -271,7 +271,79 @@ textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, m
 .topbar nav { align-items: center; }
 
 @media (max-width: 480px) {
-  #volume { width: 64px; }
+  #volume { width: 52px; }
   .topbar .nav-home, .topbar .long { display: none; }
   .topbar .short { display: inline; }
+}
+
+/* ---------- screen coach ---------- */
+
+.coach-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+.coach-head p { max-width: 40rem; }
+.warn.fair { margin: 0 0 1rem; }
+.coach-split { grid-template-columns: minmax(0, 1fr) 380px; }
+.coach .status { margin-top: 0; }
+.coach .pathline { margin-top: 0.75rem; }
+.coach-side { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.coach-side h3 { margin-top: 0; }
+.best-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
+
+.evalwrap { display: flex; gap: 0.5rem; align-items: stretch; }
+.evalwrap .board { flex: 1; min-width: 0; }
+.evalbar { position: relative; width: 22px; flex: none; border-radius: 4px; overflow: hidden; background: #403d39; box-shadow: var(--shadow); }
+.evalfill { position: absolute; left: 0; right: 0; bottom: 0; height: 50%; background: #f4f2ee; transition: height 0.3s ease; }
+.evalbar.flipped .evalfill { bottom: auto; top: 0; }
+.evalbar span { position: absolute; left: 0; right: 0; bottom: 2px; font-size: 9px; font-weight: 700; text-align: center; color: #403d39; z-index: 1; }
+.evalbar.black-ahead span { bottom: auto; top: 2px; color: #f4f2ee; }
+.evalbar.flipped span { bottom: auto; top: 2px; }
+.evalbar.flipped.black-ahead span { top: auto; bottom: 2px; }
+
+.best-move { font-size: 1.6rem; font-weight: 700; margin: 0.2rem 0 0.3rem; line-height: 1.2; }
+.best-move .score { font-size: 1rem; font-weight: 600; color: var(--muted); margin-left: 0.3rem; }
+.verdict { font-weight: 600; margin-bottom: 0.4rem; }
+.reasons { margin: 0 0 0.6rem; padding-left: 1.2rem; }
+.reasons li { margin: 0.15rem 0; }
+.bad { color: var(--bad); }
+
+.lines { list-style: none; padding: 0; margin: 0; font-size: 0.88rem; }
+.lines li { padding: 0.3rem 0; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+.lines li:first-child { border-top: 0; }
+.lines .score { display: inline-block; min-width: 3.4rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.lines .score.green { color: #15781b; }
+.lines .score.blue { color: #2c5f9e; }
+.lines .score.yellow { color: #b86f00; }
+
+.opening-name { font-weight: 600; margin-bottom: 0.4rem; }
+.eco { display: inline-block; font-size: 0.75rem; font-weight: 700; padding: 0.05rem 0.35rem; border-radius: 4px; background: var(--surface-2); border: 1px solid var(--border); margin-right: 0.2rem; vertical-align: 1px; }
+.rep-hint { font-size: 0.9rem; margin: 0.5rem 0 0.2rem; }
+.book { list-style: none; padding: 0; margin: 0; font-size: 0.85rem; }
+.book li { padding: 0.1rem 0; }
+#opening .note-item { margin: 0.5rem 0; }
+#opening .warn { margin: 0.5rem 0; }
+
+.coach select { width: 100%; margin-top: 0.3rem; padding: 0.4rem 0.5rem; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; font-weight: normal; }
+.coach .field { margin: 0 0 0.75rem; }
+.check { display: flex; align-items: center; gap: 0.45rem; font-size: 0.9rem; cursor: pointer; }
+.preview { width: 100%; display: block; border-radius: 6px; background: var(--surface-2); cursor: crosshair; touch-action: none; }
+
+.pip { padding: 0.75rem 1rem; }
+.pip .best-move { font-size: 2rem; }
+.pip p { margin: 0 0 0.35rem; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .lines .score.green { color: #6cc481; }
+  :root:not([data-theme="light"]) .lines .score.blue { color: #7fb0ea; }
+  :root:not([data-theme="light"]) .lines .score.yellow { color: #f0b04a; }
+}
+:root[data-theme="dark"] .lines .score.green { color: #6cc481; }
+:root[data-theme="dark"] .lines .score.blue { color: #7fb0ea; }
+:root[data-theme="dark"] .lines .score.yellow { color: #f0b04a; }
+
+@media (max-width: 900px) {
+  .coach-split { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 420px) {
+  #volume { display: none; }
+  .topbar nav { gap: 0.6rem; }
 }

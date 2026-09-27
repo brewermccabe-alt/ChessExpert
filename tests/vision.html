@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Vision self-test</title>
+  <style>body { font: 14px system-ui, sans-serif; margin: 16px; } .fail { color: #b00; } .pass { color: #070; } canvas { max-width: 100%; border: 1px solid #ccc; }</style>
+</head>
+<body>
+  <h1>Vision self-test</h1>
+  <p>Draws boards in several themes, sizes and orientations, then checks that the board is found and every piece is read correctly.</p>
+  <pre id="out">Running…</pre>
+  <canvas id="c"></canvas>
+  <script src="../vendor/chess.js"></script>
+  <script src="../js/pieces.js"></script>
+  <script src="../js/vision.js"></script>
+  <script>
+  (async function () {
+    const out = document.getElementById('out');
+    const log = [];
+    const THEMES = [
+      { name: 'green', light: '#ebecd0', dark: '#739552', bg: '#312e2b', hl: 'rgba(255,255,51,0.5)' },
+      { name: 'brown', light: '#f0d9b5', dark: '#b58863', bg: '#161512', hl: 'rgba(155,199,0,0.41)' },
+      { name: 'blue', light: '#dee3e6', dark: '#8ca2ad', bg: '#ffffff', hl: 'rgba(20,85,30,0.35)' },
+    ];
+    const FILES = 'abcdefgh';
+
+    const imgs = {};
+    await Promise.all(Object.entries(window.PIECE_SVG).map(([code, inner]) => new Promise((res) => {
+      const im = new Image();
+      im.onload = res;
+      im.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="200" height="200">${inner}</svg>`);
+      imgs[code] = im;
+    })));
+
+    // Deterministic random games.
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+    const positions = [];
+    for (let g = 0; g < 6; g++) {
+      const c = new Chess();
+      for (let i = 0; i < 70 && !c.isGameOver(); i++) {
+        const ms = c.moves({ verbose: true });
+        const caps = ms.filter((m) => m.captured);
+        const m = caps.length && rnd() < 0.5 ? caps[Math.floor(rnd() * caps.length)] : ms[Math.floor(rnd() * ms.length)];
+        c.move(m);
+        if (i % 12 === 5) positions.push({ fen: c.fen(), last: m });
+      }
+    }
+
+    function draw(fen, theme, x0, y0, size, orientation, last) {
+      const cv = document.getElementById('c');
+      cv.width = 1400; cv.height = 900;
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = theme.bg; ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.fillStyle = '#888'; ctx.font = '20px sans-serif'; ctx.fillText('Some page text next to the board', 20, 40);
+      const s = size / 8;
+      const chess = new Chess(fen);
+      for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+        const sq = orientation === 'w' ? FILES[x] + (8 - y) : FILES[7 - x] + (y + 1);
+        const light = (FILES.indexOf(sq[0]) + +sq[1]) % 2 === 1;
+        ctx.fillStyle = light ? theme.light : theme.dark;
+        ctx.fillRect(x0 + x * s, y0 + y * s, s + 0.5, s + 0.5);
+        if (last && (last.from === sq || last.to === sq)) { ctx.fillStyle = theme.hl; ctx.fillRect(x0 + x * s, y0 + y * s, s, s); }
+        ctx.fillStyle = light ? theme.dark : theme.light; ctx.font = `bold ${Math.round(s * 0.2)}px sans-serif`;
+        if (x === 0) ctx.fillText(sq[1], x0 + 3, y0 + y * s + s * 0.22);
+        if (y === 7) ctx.fillText(sq[0], x0 + x * s + s * 0.8, y0 + 8 * s - 4);
+        const p = chess.get(sq);
+        if (p) ctx.drawImage(imgs[p.color + p.type], x0 + x * s, y0 + y * s, s, s);
+      }
+      return ctx.getImageData(0, 0, cv.width, cv.height);
+    }
+
+    let pass = 0, fail = 0;
+    const check = (ok, msg) => { if (ok) pass++; else { fail++; log.push('FAIL ' + msg); } };
+    const t0 = performance.now();
+    for (const theme of THEMES) {
+      for (const orientation of ['w', 'b']) {
+        const rect0 = { x: 180.4, y: 60.6, size: 640 };
+        const img = draw(new Chess().fen(), theme, rect0.x, rect0.y, rect0.size, orientation);
+        const found = Vision.findBoard(img);
+        check(found && Math.abs(found.x - rect0.x) < 3 && Math.abs(found.y - rect0.y) < 3 && Math.abs(found.size - rect0.size) < 4,
+          `${theme.name}/${orientation}: board at ${JSON.stringify(found)}`);
+        if (!found) continue;
+        const cal = Vision.calibrate(img, found);
+        check(cal.ok && cal.cal.orientation === orientation, `${theme.name}/${orientation}: calibration ${cal.error || cal.cal.orientation}`);
+        if (!cal.ok) continue;
+        // Read at the calibrated size and at a smaller, differently placed board.
+        for (const rect of [rect0, { x: 402.2, y: 211.7, size: 452 }]) {
+          for (const p of positions) {
+            const im = draw(p.fen, theme, rect.x, rect.y, rect.size, orientation, p.last);
+            const f = Vision.findBoard(im);
+            if (!f) { check(false, `${theme.name}/${orientation}/${rect.size}: no board for ${p.fen}`); continue; }
+            const r = Vision.read(im, f, cal.cal, cal.cal.orientation);
+            const want = p.fen.split(' ')[0];
+            check(r.placement === want, `${theme.name}/${orientation}/${rect.size}: read ${r.placement} want ${want}`);
+          }
+        }
+      }
+    }
+    log.unshift(`${fail ? 'FAILED' : 'PASSED'}: ${pass} passed, ${fail} failed (${Math.round(performance.now() - t0)} ms)`);
+    out.textContent = log.join('\n');
+    out.className = fail ? 'fail' : 'pass';
+    window.TEST_RESULT = { pass, fail, log };
+  })();
+  </script>
+</body>
+</html>

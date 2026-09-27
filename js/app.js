@@ -723,6 +723,12 @@
         <h2>3. Review</h2>
         <p>Each of your moves is scheduled with spaced repetition. Get it right and the next review is pushed further out (1 day, 3 days, then growing). Miss it and it comes back within minutes and again later in the same session. <b>Review</b> only quizzes moves that are due, auto-playing the rest of the line to get you there.</p>
         <p><b>Drill all</b> quizzes every move in the repertoire without touching your schedule — handy before a tournament.</p>
+        <h2>Screen Coach</h2>
+        <p>The <b>Coach</b> watches the chess game on your screen and shows the best moves while you play. Press <b>Start watching</b> and share the tab or window with the board. The first time, show the starting position (a new game or an analysis board) so the coach can learn what your site's pieces look like. After that it follows the game move by move.</p>
+        <p>For your moves it shows the engine's top three moves as arrows (green is best), the evaluation, and plain-language reasons: wins material, forks, threats, development, passed pawns. On your opponent's move it shows what they should play, and it warns you when one of your pieces is hanging. The <b>Opening</b> panel names the opening, shows the moves from your repertoires and the library with their notes, and tells you when your opponent leaves your preparation.</p>
+        <p>Choose <b>Just a hint</b> to be told only which piece to move, and <b>Say my best move out loud</b> to hear it. In Chrome and Edge, <b>Pop out</b> opens a small always-on-top window, so you can keep the coach over your game. You can also open or paste a screenshot instead of sharing the screen.</p>
+        <p>If the board isn't found, drag a box around it in the <b>Screen</b> preview. If White and Black are swapped, press <b>Flip</b>. If the coach thinks it's the wrong side's move (it has to guess when it joins mid-game), press <b>Switch side to move</b>.</p>
+        <p><b>Fair play:</b> using engine help in rated games against other people is cheating on every chess site and gets accounts closed. Use the coach against bots, on analysis boards, in unrated games where your opponent agrees, and to review games.</p>
         <h2>Your data</h2>
         <p>Everything is stored locally in your browser — no account, no server, no paywall. Use <b>Export backup</b> on the home page to save a copy or move it to another device, and <b>Export PGN</b> to use your repertoire elsewhere.</p>
         <h2>Sounds</h2>
@@ -742,6 +748,7 @@
     if (parts[0] === 'edit' && rep) viewEditor(rep);
     else if (parts[0] === 'train' && rep) viewTrain(rep, ['review', 'learn', 'drill'].includes(parts[2]) ? parts[2] : 'review');
     else if (parts[0] === 'help') viewHelp();
+    else if (parts[0] === 'coach') cleanup = CoachView.mount(app, { esc, toast, reps: () => data.repertoires });
     else viewHome();
     window.scrollTo(0, 0);
   }

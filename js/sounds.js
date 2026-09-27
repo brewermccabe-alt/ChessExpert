@@ -2,15 +2,34 @@
 (function () {
   const PREF_KEY = 'openingTrainer.sound';
   let ctx = null;
+  let out = null; // master bus: every sound connects here instead of ctx.destination
+  const VOLUME = 3.2; // overall loudness boost; the compressor keeps it from distorting
   let enabled = true;
   try {
     enabled = localStorage.getItem(PREF_KEY) !== 'off';
   } catch (e) { /* storage unavailable: default on */ }
 
   // Browsers only allow audio after a user gesture, so create/resume the context on the first one.
+  // Master bus: gain boost -> compressor/limiter -> speakers.
+  function makeBus(c) {
+    const gain = c.createGain();
+    gain.gain.value = VOLUME;
+    const comp = c.createDynamicsCompressor();
+    comp.threshold.value = -4;
+    comp.knee.value = 3;
+    comp.ratio.value = 20;
+    comp.attack.value = 0.002;
+    comp.release.value = 0.15;
+    gain.connect(comp).connect(c.destination);
+    return gain;
+  }
+
   function unlock() {
     try {
-      if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (!ctx) {
+        ctx = new (window.AudioContext || window.webkitAudioContext)();
+        out = makeBus(ctx);
+      }
       if (ctx.state === 'suspended') ctx.resume();
     } catch (e) { ctx = null; }
   }
@@ -35,7 +54,7 @@
     const g = ctx.createGain();
     g.gain.setValueAtTime(gain, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + decay);
-    src.connect(bp).connect(g).connect(ctx.destination);
+    src.connect(bp).connect(g).connect(out);
     src.start(t);
   }
 
@@ -48,7 +67,7 @@
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(gain, t + attack);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g).connect(ctx.destination);
+    o.connect(g).connect(out);
     o.start(t);
     o.stop(t + dur + 0.02);
   }
@@ -121,5 +140,20 @@
     if (on) { unlock(); play('move'); }
   }
 
-  window.Sound = { play, forMove, setEnabled, isEnabled: () => enabled };
+  // Render a sound offline and report its peak/RMS level (used for tuning; not called by the app).
+  async function measure(name) {
+    const sr = 44100;
+    const off = new OfflineAudioContext(1, sr * 3, sr);
+    const saved = [ctx, out];
+    // Start the sound 0.5 s in, like a real move after the page has been idle.
+    ctx = new Proxy(off, { get: (t, k) => (k === 'currentTime' ? 0.5 : typeof t[k] === 'function' ? t[k].bind(t) : t[k]) });
+    out = makeBus(off);
+    try { sounds[name](); } finally { [ctx, out] = saved; }
+    const d = (await off.startRendering()).getChannelData(0);
+    let peak = 0, sum = 0;
+    for (const v of d) { peak = Math.max(peak, Math.abs(v)); sum += v * v; }
+    return { peak, rms: Math.sqrt(sum / d.length) };
+  }
+
+  window.Sound = { play, forMove, setEnabled, isEnabled: () => enabled, measure };
 })();

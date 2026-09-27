@@ -1,19 +1,29 @@
 /* Synthesised sound effects (Web Audio API) — no audio files needed. */
 (function () {
-  const PREF_KEY = 'openingTrainer.sound';
+  const VOLUME_KEY = 'openingTrainer.volume';
+  const OLD_TOGGLE_KEY = 'openingTrainer.sound'; // earlier on/off setting
+  const DEFAULT_VOLUME = 85; // on the 0–100 slider
+  const MAX_GAIN = 4.5; // master gain at 100; the compressor keeps it from distorting
   let ctx = null;
   let out = null; // master bus: every sound connects here instead of ctx.destination
-  const VOLUME = 3.2; // overall loudness boost; the compressor keeps it from distorting
-  let enabled = true;
-  try {
-    enabled = localStorage.getItem(PREF_KEY) !== 'off';
-  } catch (e) { /* storage unavailable: default on */ }
 
-  // Browsers only allow audio after a user gesture, so create/resume the context on the first one.
-  // Master bus: gain boost -> compressor/limiter -> speakers.
+  let volume = DEFAULT_VOLUME;
+  try {
+    const saved = localStorage.getItem(VOLUME_KEY);
+    if (saved !== null && !isNaN(+saved)) volume = Math.max(0, Math.min(100, +saved));
+    else if (localStorage.getItem(OLD_TOGGLE_KEY) === 'off') volume = 0;
+  } catch (e) { /* storage unavailable: use the default */ }
+  let lastAudible = volume || DEFAULT_VOLUME; // restored when un-muting
+
+  // Squared curve so the slider feels even to the ear.
+  function busGain() {
+    return MAX_GAIN * Math.pow(volume / 100, 2);
+  }
+
+  // Master bus: gain -> compressor/limiter -> speakers.
   function makeBus(c) {
     const gain = c.createGain();
-    gain.gain.value = VOLUME;
+    gain.gain.value = busGain();
     const comp = c.createDynamicsCompressor();
     comp.threshold.value = -4;
     comp.knee.value = 3;
@@ -24,6 +34,7 @@
     return gain;
   }
 
+  // Browsers only allow audio after a user gesture, so create/resume the context on the first one.
   function unlock() {
     try {
       if (!ctx) {
@@ -36,7 +47,7 @@
   ['pointerdown', 'keydown', 'touchstart'].forEach((ev) => window.addEventListener(ev, unlock, { capture: true, passive: true }));
 
   function ready() {
-    return enabled && ctx && ctx.state === 'running';
+    return volume > 0 && ctx && ctx.state === 'running';
   }
 
   // Short filtered noise burst: the "wood" of a piece landing.
@@ -134,10 +145,26 @@
     else play('move');
   }
 
-  function setEnabled(on) {
-    enabled = on;
-    try { localStorage.setItem(PREF_KEY, on ? 'on' : 'off'); } catch (e) { /* ignore */ }
-    if (on) { unlock(); play('move'); }
+  function setVolume(v) {
+    volume = Math.max(0, Math.min(100, Math.round(+v) || 0));
+    if (volume > 0) lastAudible = volume;
+    try { localStorage.setItem(VOLUME_KEY, String(volume)); } catch (e) { /* ignore */ }
+    unlock();
+    if (out) out.gain.setTargetAtTime(busGain(), ctx.currentTime, 0.01);
+  }
+
+  // Mute, or restore the last audible level.
+  function toggleMute() {
+    setVolume(volume > 0 ? 0 : lastAudible);
+  }
+
+  // A click at the current level, rate-limited so dragging the slider doesn't machine-gun.
+  let lastPreview = 0;
+  function preview() {
+    const now = Date.now();
+    if (now - lastPreview < 120) return;
+    lastPreview = now;
+    play('move');
   }
 
   // Render a sound offline and report its peak/RMS level (used for tuning; not called by the app).
@@ -155,5 +182,5 @@
     return { peak, rms: Math.sqrt(sum / d.length) };
   }
 
-  window.Sound = { play, forMove, setEnabled, isEnabled: () => enabled, measure };
+  window.Sound = { play, forMove, setVolume, getVolume: () => volume, toggleMute, preview, measure };
 })();

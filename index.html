@@ -12,9 +12,12 @@
   <header class="topbar">
     <a href="#/" class="brand">♞ Opening Trainer</a>
     <nav>
-      <a href="#/">Repertoires</a>
-      <a href="#/help">How it works</a>
-      <button id="sound-toggle" class="sound-toggle" type="button" title="Turn sound effects on or off"></button>
+      <a href="#/" class="nav-home">Repertoires</a>
+      <a href="#/help"><span class="long">How it works</span><span class="short">Help</span></a>
+      <div class="volume">
+        <button id="sound-toggle" class="sound-toggle" type="button" title="Mute or unmute"></button>
+        <input id="volume" type="range" min="0" max="100" step="1" aria-label="Sound volume" title="Sound volume">
+      </div>
     </nav>
   </header>
   <main id="app"></main>

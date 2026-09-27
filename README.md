@@ -13,7 +13,7 @@ A free, open-source chess opening repertoire builder and trainer. Build your lin
 - **Drill all:** quiz the whole repertoire without changing your schedule.
 - **Opening library:** 14 ready-made repertoires you can add with one click and then edit. As White: Italian, Ruy Lopez, Scotch, London, Queen's Gambit and the Alapin vs the Sicilian. As Black: Sicilian Najdorf, French, Caro-Kann, Scandinavian, Queen's Gambit Declined, Slav, King's Indian and Nimzo-Indian.
 - **Backup/restore** everything as a JSON file.
-- **Sound effects** for moves, captures, checks and checkmate, a ding when you finish a line, and a fanfare when you finish a session. There's a mute toggle in the top bar.
+- **Sound effects** for moves, captures, checks and checkmate, a ding when you finish a line, and a fanfare when you finish a session. A volume slider and mute button sit in the top bar.
 - Works offline, on desktop or mobile, in light or dark mode.
 
 ## Run it

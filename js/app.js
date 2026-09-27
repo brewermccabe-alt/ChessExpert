@@ -683,7 +683,7 @@
         <h2>Your data</h2>
         <p>Everything is stored locally in your browser — no account, no server, no paywall. Use <b>Export backup</b> on the home page to save a copy or move it to another device, and <b>Export PGN</b> to use your repertoire elsewhere.</p>
         <h2>Sounds</h2>
-        <p>Moves, captures, checks and checkmates each have their own sound. A ding plays when you finish a line, and a fanfare when you finish the whole session. Use the speaker button in the top bar to turn sound off or on.</p>
+        <p>Moves, captures, checks and checkmates each have their own sound. A ding plays when you finish a line, and a fanfare when you finish the whole session. Drag the volume slider in the top bar to set the level, or click the speaker to mute and unmute.</p>
         <h2>Keyboard</h2>
         <p>In the editor: ← / → to step through moves, Home to go to the start, F to flip the board.</p>
       </section>`;
@@ -719,14 +719,18 @@
     navigate(a.getAttribute('href'));
   });
   const soundBtn = document.getElementById('sound-toggle');
-  const renderSoundBtn = () => {
-    const on = Sound.isEnabled();
-    soundBtn.innerHTML = on ? '🔊<span class="lbl"> Sound on</span>' : '🔇<span class="lbl"> Sound off</span>';
-    soundBtn.setAttribute('aria-label', on ? 'Sound on' : 'Sound off');
-    soundBtn.setAttribute('aria-pressed', String(on));
+  const volumeEl = document.getElementById('volume');
+  const renderVolume = () => {
+    const v = Sound.getVolume();
+    soundBtn.textContent = v === 0 ? '🔇' : v < 40 ? '🔈' : v < 75 ? '🔉' : '🔊';
+    soundBtn.setAttribute('aria-label', v === 0 ? 'Unmute sounds' : 'Mute sounds');
+    volumeEl.value = v;
+    volumeEl.style.setProperty('--fill', v + '%');
+    volumeEl.title = `Volume ${v}%`;
   };
-  soundBtn.onclick = () => { Sound.setEnabled(!Sound.isEnabled()); renderSoundBtn(); };
-  renderSoundBtn();
+  volumeEl.addEventListener('input', () => { Sound.setVolume(volumeEl.value); renderVolume(); Sound.preview(); });
+  soundBtn.onclick = () => { Sound.toggleMute(); renderVolume(); Sound.preview(); };
+  renderVolume();
 
   window.addEventListener('popstate', () => {
     currentRoute = location.hash || '#/';

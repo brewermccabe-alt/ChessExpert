@@ -238,7 +238,6 @@ textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, m
   .topbar { padding: 0.6rem 0.9rem; }
   .brand { font-size: 1rem; white-space: nowrap; }
   .topbar nav { gap: 0.75rem; font-size: 0.9rem; white-space: nowrap; }
-  .sound-toggle .lbl { display: none; }
 }
 
 /* ---------- opening library ---------- */
@@ -249,6 +248,21 @@ textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, m
 .lib-added { color: var(--good); font-size: 0.85rem; font-weight: 600; white-space: nowrap; }
 .modal:has(.lib-list) { max-width: 620px; }
 
-.sound-toggle { border: 0; background: none; color: var(--muted); font: inherit; cursor: pointer; padding: 0; white-space: nowrap; }
-.sound-toggle:hover { color: var(--text); }
+.topbar .short { display: none; }
+.volume { display: flex; align-items: center; gap: 0.35rem; }
+.sound-toggle { border: 0; background: none; font: inherit; font-size: 1.05rem; line-height: 1; cursor: pointer; padding: 0.15rem; border-radius: 4px; width: 1.6rem; text-align: center; }
+.sound-toggle:hover { background: var(--surface-2); }
+.sound-toggle:focus-visible, #volume:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Volume slider: filled up to the current level. */
+#volume { -webkit-appearance: none; appearance: none; width: 96px; height: 6px; border-radius: 3px; cursor: pointer; margin: 0;
+  background: linear-gradient(to right, var(--accent) var(--fill, 85%), var(--border) var(--fill, 85%)); }
+#volume::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); }
+#volume::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); }
 .topbar nav { align-items: center; }
+
+@media (max-width: 480px) {
+  #volume { width: 64px; }
+  .topbar .nav-home, .topbar .long { display: none; }
+  .topbar .short { display: inline; }
+}

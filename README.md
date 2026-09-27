@@ -11,6 +11,7 @@ A free, open-source chess opening repertoire builder and trainer. Build your lin
 - **Learn mode:** walks you through new lines and shows each new move with an arrow.
 - **Spaced-repetition review:** each of your moves is scheduled SM-2 style (1 day → 3 days → growing intervals). Moves you miss come back in minutes and get retried in the same session.
 - **Drill all:** quiz the whole repertoire without changing your schedule.
+- **Move-by-move notes:** every move in the library has a short explanation. Learn mode shows why a new move is played before you play it; reviews show it after you answer.
 - **Opening library:** 14 ready-made repertoires you can add with one click and then edit. As White: Italian, Ruy Lopez, Scotch, London, Queen's Gambit and the Alapin vs the Sicilian. As Black: Sicilian Najdorf, French, Caro-Kann, Scandinavian, Queen's Gambit Declined, Slav, King's Indian and Nimzo-Indian.
 - **Backup/restore** everything as a JSON file.
 - **Sound effects** for moves, captures, checks and checkmate, a ding when you finish a line, and a fanfare when you finish a session. A volume slider and mute button sit in the top bar.

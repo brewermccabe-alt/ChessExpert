@@ -17,6 +17,11 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
+  function fmtMove(fenBefore, san) {
+    const [, turn, , , , num] = fenBefore.split(' ');
+    return turn === 'w' ? `${num}. ${san}` : `${num}… ${san}`;
+  }
+
   function persist() {
     if (!Rep.save(data)) toast('Could not save — browser storage is full or blocked. Export a backup!');
   }
@@ -303,6 +308,7 @@
   function addFromLibrary(s) {
     const rep = Rep.newRepertoire(s.name, s.color);
     rep.library = s.name;
+    rep.notesVersion = window.LIBRARY_NOTES_VERSION;
     Rep.importPgn(rep, s.pgn);
     data.repertoires.push(rep);
     return rep;
@@ -389,7 +395,7 @@
           <div id="warn"></div>
           <h3>Moves from here</h3>
           <ul class="moves" id="moves"></ul>
-          <h3>Note for this position</h3>
+          <h3 id="note-h">Note on the last move</h3>
           <textarea id="comment" rows="3" placeholder="Plans, ideas, traps… (shown during training)"></textarea>
           <div class="row wrap panel-actions">
             <a class="btn primary" href="#/train/${rep.id}/learn">Learn new</a>
@@ -469,7 +475,10 @@
         const deeper = rep.positions[to] ? Object.keys(rep.positions[to].moves).length : 0;
         return `<li>
           <button class="move-btn" data-san="${esc(san)}">${esc(moveLabel(fen, san))}</button>
-          <span class="muted small">${deeper ? `${deeper} repl${deeper === 1 ? 'y' : 'ies'}` : 'end of line'}</span>
+          <span class="move-meta">
+            ${rep.positions[to] && rep.positions[to].comment ? `<span class="move-note">${esc(rep.positions[to].comment)}</span>` : ''}
+            <span class="muted small">${deeper ? `${deeper} repl${deeper === 1 ? 'y' : 'ies'}` : 'end of line'}</span>
+          </span>
           <button class="btn icon small danger-ghost" data-del="${esc(san)}" title="Delete this move and everything after it">✕</button>
         </li>`;
       }).join('') : `<li class="muted small">${userTurn ? 'Play your move on the board.' : 'Play the opponent replies you want to prepare for.'}</li>`;
@@ -488,6 +497,9 @@
         }
       }));
 
+      app.querySelector('#note-h').textContent = path.length
+        ? `Note on ${fmtMove(path.length > 1 ? path[path.length - 2].fen : rep.rootFen, path[path.length - 1].san)}`
+        : 'Note on the starting position';
       const ta = app.querySelector('#comment');
       ta.value = pos.comment || '';
       ta.disabled = !rep.positions[key];
@@ -549,7 +561,7 @@
             <p class="muted small">${MODE_LABEL[mode]}${mode === 'drill' ? ' — practice only, your schedule is not changed' : ''}</p>
           </div>
           <div class="status" id="status">Starting…</div>
-          <div class="note" id="note" hidden></div>
+          <div class="notes" id="note" hidden></div>
           <div class="row wrap">
             <button class="btn" id="hint">Show move</button>
             <button class="btn" id="skip">Skip line</button>
@@ -562,7 +574,29 @@
     const statusEl = app.querySelector('#status');
     const noteEl = app.querySelector('#note');
     const setStatus = (html, cls = '') => { statusEl.className = 'status ' + cls; statusEl.innerHTML = html; };
-    const setNote = (text) => { noteEl.hidden = !text; noteEl.textContent = text || ''; };
+    // Notes for the last moves played, plus "why" notes for a move you're about to learn.
+    let moveNotes = [];
+    let whyNotes = [];
+    const noteFor = (fen) => {
+      const p = rep.positions[Rep.posKey(fen)];
+      return p && p.comment ? p.comment : '';
+    };
+    const renderNotes = () => {
+      const items = [
+        ...moveNotes.filter((n) => n.text).map((n) => `<div class="note-item ${n.who}"><b>${esc(n.label)}</b> ${esc(n.text)}</div>`),
+        ...whyNotes.filter((n) => n.text).map((n) => `<div class="note-item why"><b>Why ${esc(n.san)}?</b> ${esc(n.text)}</div>`),
+      ];
+      noteEl.hidden = !items.length;
+      noteEl.innerHTML = items.join('');
+    };
+    const setWhy = (answers) => {
+      whyNotes = answers.map((san) => {
+        const c = new Chess(chess.fen());
+        c.move(san);
+        return { san, text: noteFor(c.fen()) };
+      });
+      renderNotes();
+    };
     const renderScores = () => {
       const s = trainer.stats;
       app.querySelector('#scores').innerHTML = `
@@ -592,14 +626,21 @@
       onPosition(c, mv) {
         chess = new Chess(c.fen());
         Sound.forMove(mv);
+        whyNotes = [];
+        if (!mv) moveNotes = [];
+        else {
+          moveNotes.push({ label: fmtMove(mv.before, mv.san), who: mv.color === rep.color ? 'you' : 'opp', text: noteFor(c.fen()) });
+          moveNotes = moveNotes.slice(-2);
+        }
+        renderNotes();
         board.setLastMove(mv && mv.from, mv && mv.to);
         board.setArrows([]);
         board.render();
       },
       onPrompt(info) {
         prompting = true;
-        setNote(info.comment);
         if (info.isNew) {
+          setWhy(info.answers);
           const arrows = info.answers.map((san) => {
             const m = new Chess(chess.fen()).move(san);
             return { from: m.from, to: m.to, color: 'blue' };
@@ -616,7 +657,6 @@
           prompting = false;
           setStatus(`✓ ${esc(mv.san)}`, 'good');
           board.flash(mv.to, 'good');
-          setNote('');
         } else {
           setStatus(`✗ ${esc(mv.san)} isn’t in your repertoire. Try again${attempts >= 2 ? ' — the answer is shown' : ''}.`, 'bad');
           if (attempts >= 2) showHint();
@@ -653,6 +693,7 @@
       const answers = trainer.hint();
       if (!answers) return;
       persist();
+      setWhy(answers);
       board.setArrows(answers.map((san) => {
         const m = new Chess(chess.fen()).move(san);
         return { from: m.from, to: m.to, color: 'green' };
@@ -677,6 +718,8 @@
         <p>Positions are matched by board position, so transpositions are shared automatically.</p>
         <h2>2. Learn</h2>
         <p><b>Learn new</b> walks you through lines containing moves you haven't seen yet. The computer plays the opponent's moves; for each new move of yours, a blue arrow shows what to play.</p>
+        <h2>Move notes</h2>
+        <p>Every move in the opening library has a short note explaining it. In <b>Learn new</b> you see why a new move is played before you play it. In reviews the explanation appears after you answer, so it doesn't give the move away. The notes for the last two moves stay on screen, and you can edit any note in the editor.</p>
         <h2>3. Review</h2>
         <p>Each of your moves is scheduled with spaced repetition. Get it right and the next review is pushed further out (1 day, 3 days, then growing). Miss it and it comes back within minutes and again later in the same session. <b>Review</b> only quizzes moves that are due, auto-playing the rest of the line to get you there.</p>
         <p><b>Drill all</b> quizzes every move in the repertoire without touching your schedule — handy before a tournament.</p>
@@ -711,6 +754,30 @@
     }
   });
 
+  // Give repertoires added from an older library the current move notes. A position's note is only
+  // replaced when it's empty or still one of the old library's notes, so the user's own notes stay.
+  function upgradeLibraryNotes() {
+    const oldNotes = new Set(window.LIBRARY_OLD_NOTES || []);
+    let changed = false;
+    for (const rep of data.repertoires) {
+      if ((rep.notesVersion || 0) >= window.LIBRARY_NOTES_VERSION) continue;
+      const name = rep.library || (window.LIBRARY_OLD_NAMES || {})[rep.name];
+      const s = SAMPLES.find((x) => x.name === name && x.color === rep.color);
+      if (!s) continue;
+      const lib = Rep.newRepertoire(s.name, s.color);
+      Rep.importPgn(lib, s.pgn);
+      for (const [key, p] of Object.entries(lib.positions)) {
+        const target = rep.positions[key];
+        if (!p.comment || !target) continue;
+        const lines = (target.comment || '').split('\n').map((l) => l.trim()).filter(Boolean);
+        if (lines.every((l) => oldNotes.has(l))) target.comment = p.comment;
+      }
+      rep.notesVersion = window.LIBRARY_NOTES_VERSION;
+      changed = true;
+    }
+    if (changed) persist();
+  }
+
   // In-page navigation: links use href="#/…", handled here so it also works where the URL can't change.
   document.addEventListener('click', (e) => {
     const a = e.target.closest('a[href^="#/"]');
@@ -731,6 +798,7 @@
   volumeEl.addEventListener('input', () => { Sound.setVolume(volumeEl.value); renderVolume(); Sound.preview(); });
   soundBtn.onclick = () => { Sound.toggleMute(); renderVolume(); Sound.preview(); };
   renderVolume();
+  upgradeLibraryNotes();
 
   window.addEventListener('popstate', () => {
     currentRoute = location.hash || '#/';

@@ -41,7 +41,8 @@ let bad = 0;
 for (const f of INPUTS) {
   for (const line of fs.readFileSync(f, 'utf8').split('\n')) {
     if (!line.trim()) continue;
-    const p = JSON.parse(line);
+    let p;
+    try { p = JSON.parse(line); } catch (e) { bad++; continue; } // e.g. a line cut off when a run was interrupted
     if (!valid(p)) { bad++; continue; }
     const id = pid(p.fen, p.moves[0]);
     if (!byId.has(id)) byId.set(id, p);

@@ -13,17 +13,17 @@ for (const size of E.SIZES) {
 
 // Pawn moves: single, double, diagonal capture only when an enemy is there
 let s = E.newGame(24);
-const pw = E.pieceAt(s, 5, 21);
+const pw = E.pieceAt(s, 5, 22);
 assert.strictEqual(pw.type, 'pawn');
-assert.deepStrictEqual(E.moves(s, pw).map((m) => m.y).sort(), [19, 20]);
-assert.ok(E.move(s, pw.id, 5, 19));
-assert.strictEqual(E.move(s, pw.id, 5, 18), null, 'a piece acts once per turn');
+assert.deepStrictEqual(E.moves(s, pw).map((m) => m.y).sort(), [20, 21]);
+assert.ok(E.move(s, pw.id, 5, 20));
+assert.strictEqual(E.move(s, pw.id, 5, 19), null, 'a piece acts once per turn');
 
 // Captures give XP, XP evolves, evolution is validated
 s = E.newGame(24);
-const w = E.pieceAt(s, 5, 21), b = E.pieceAt(s, 6, 2);
-s.cells[21 * 24 + 5] = null; w.x = 5; w.y = 10; s.cells[10 * 24 + 5] = w;
-s.cells[2 * 24 + 6] = null; b.x = 6; b.y = 9; s.cells[9 * 24 + 6] = b;
+const w = E.pieceAt(s, 5, 22), b = E.pieceAt(s, 6, 1);
+s.cells[22 * 24 + 5] = null; w.x = 5; w.y = 10; s.cells[10 * 24 + 5] = w;
+s.cells[1 * 24 + 6] = null; b.x = 6; b.y = 9; s.cells[9 * 24 + 6] = b;
 const r = E.move(s, w.id, 6, 9);
 assert.strictEqual(r.captured, 'pawn');
 assert.strictEqual(w.xp, 1);
@@ -36,15 +36,15 @@ assert.strictEqual(w.xp, 0);
 
 // Pawn march earns XP
 s = E.newGame(24);
-const m1 = E.pieceAt(s, 3, 21);
-s.cells[21 * 24 + 3] = null; m1.y = 12; s.cells[12 * 24 + 3] = m1; m1.steps = 5;
+const m1 = E.pieceAt(s, 3, 22);
+s.cells[22 * 24 + 3] = null; m1.y = 12; s.cells[12 * 24 + 3] = m1; m1.steps = 5;
 E.move(s, m1.id, 3, 11);
 assert.strictEqual(m1.xp, 1);
 
 // Slider range limit and blocking
 s = E.newGame(24);
 const q = s.pieces.find((p) => p.color === 'w' && p.type === 'queen');
-assert.ok(E.moves(s, q).every((m) => m.y > q.y), 'queen only has retreat squares at the start');
+assert.strictEqual(E.moves(s, q).length, 0, 'queen starts boxed in');
 s.cells[q.y * 24 + q.x] = null; q.x = 12; q.y = 12; s.cells[12 * 24 + 12] = q;
 assert.ok(E.moves(s, q).every((m) => Math.max(Math.abs(m.x - 12), Math.abs(m.y - 12)) <= 10));
 assert.ok(E.attacked(s, 12, 5, 'w'));

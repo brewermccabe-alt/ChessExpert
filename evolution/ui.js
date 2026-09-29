@@ -5,7 +5,7 @@
   const $ = (id) => document.getElementById(id);
   const canvas = $('board'), ctx = canvas.getContext('2d');
   const mini = $('mini'), mctx = mini.getContext('2d');
-  const SAVE_KEY = 'evolution-chess-save';
+  const SAVE_KEY = 'evolution-chess-save-v2';
   const GLYPH = { pawn: '♟', knight: '♞', bishop: '♝', rook: '♜', nightrider: '♞', queen: '♛', amazon: '♛', king: '♚' };
   const BADGE = { nightrider: 'N', amazon: 'A' };
   const TIER_COLOR = { pawn: '#9a9a9a', knight: '#c98b4a', bishop: '#c98b4a', rook: '#b8c2cc', nightrider: '#b8c2cc',

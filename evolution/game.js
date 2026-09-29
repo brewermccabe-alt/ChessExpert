@@ -41,7 +41,7 @@
   const inside = (s, x, y) => x >= 0 && y >= 0 && x < s.size && y < s.size;
   const pieceAt = (s, x, y) => (inside(s, x, y) ? s.cells[idx(s, x, y)] : null);
   const pawnDir = (color) => (color === 'w' ? -1 : 1); // White starts at the bottom and moves up
-  const pawnStartRow = (s, color) => (color === 'w' ? s.size - 3 : 2);
+  const pawnStartRow = (s, color) => (color === 'w' ? s.size - 2 : 1);
   const actionsFor = (size) => Math.max(3, Math.round(size / 8));
 
   function newGame(size) {
@@ -52,7 +52,7 @@
     const mid = Math.floor(size / 2);
     for (const color of ['w', 'b']) {
       const pawnRow = pawnStartRow(s, color);
-      const backRow = color === 'w' ? size - 2 : 1;
+      const backRow = color === 'w' ? size - 1 : 0;
       for (let x = 0; x < size; x++) {
         add(s, 'pawn', color, x, pawnRow);
         let t = back[x % back.length];

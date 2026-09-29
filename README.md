@@ -15,7 +15,7 @@ Open the **Coach** tab, press **Start watching** and share the browser tab or wi
 
 > **Fair play:** using engine help in rated games against other people is cheating on every chess site and gets accounts closed. Use the coach against bots, on analysis boards, in unrated games where your opponent agrees, and to review games.
 
-The coach needs the page to be served over http(s), because the engine runs in a Web Worker (see **Run it**). Keep the coach window visible next to your game, or use **Pop out**.
+Keep the coach window visible next to your game, or use **Pop out**.
 
 ## Features
 
@@ -36,7 +36,7 @@ The coach needs the page to be served over http(s), because the engine runs in a
 
 It's a static site with no build step and no server.
 
-- **Easiest:** open `index.html` in your browser. The opening trainer works this way. The Screen Coach needs a local server instead: run `python3 -m http.server` in this folder and open <http://localhost:8000>.
+- **Easiest:** double-click `index.html` to open it in your browser. Everything works this way, the Screen Coach included. Browsers don't let a page opened from a file load the engine's `.wasm` file or start a worker from disk, so in that case the coach loads `vendor/stockfish/stockfish-bundle.js`, which holds the engine and its `.wasm` (as base64), and starts the engine from memory. Rebuild that file with `node vendor/stockfish/make-bundle.js` if you update Stockfish.
 - **Or host it for free** on GitHub Pages: repo Settings → Pages → Deploy from branch → pick the branch and `/ (root)`.
 
 Your data lives in your browser's localStorage. Use **Export backup** to move it between devices or browsers.
@@ -59,8 +59,8 @@ js/coach.js       game tracking, move explanations, opening lookups
 js/coach-view.js  Screen Coach view
 vendor/chess.js   chess.js 1.4.0 (move generation and validation)
 vendor/openings.js opening names (Lichess chess-openings)
-vendor/stockfish/ Stockfish 18 lite, single-threaded WASM build
-tests/vision.html self-test for board and piece recognition (open it via the local server)
+vendor/stockfish/ Stockfish 18 lite, single-threaded WASM build, plus a one-file bundle for file:// pages
+tests/vision.html self-test for board and piece recognition
 ```
 
 ## Credits

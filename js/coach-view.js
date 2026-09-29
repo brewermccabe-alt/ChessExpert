@@ -155,7 +155,7 @@
 
     async function startWatching() {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-        status('This browser can\'t share the screen here. Use Chrome, Edge or Firefox on a computer, served over http(s) — or use <b>Open screenshot</b>.', 'bad');
+        status('This browser can\'t share the screen here. Use Chrome, Edge or Firefox on a computer — or use <b>Open screenshot</b>.', 'bad');
         return;
       }
       try {

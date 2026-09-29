@@ -56,3 +56,5 @@ button:disabled { opacity: .5; cursor: default; }
   .panel { width: 100%; flex: 1 1 45%; border-left: 0; border-top: 1px solid var(--line); }
   #mini { width: 100px; height: 100px; }
 }
+
+body.focus .panel { display: none; }

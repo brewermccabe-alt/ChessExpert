@@ -359,9 +359,35 @@
   $('zout').addEventListener('click', () => zoomAt(1 / 1.4, W / 2, H / 2));
   $('zfit').addEventListener('click', fit);
   $('zhome').addEventListener('click', goHome);
-  $('new').addEventListener('click', () => {
-    if (!state.winner && state.turnNo > 2 && !confirm('Abandon the current game and start a new one?')) return;
+  // No confirm(): sandboxed pages block it and it silently cancels. Ask with a second click instead.
+  let armTimer = null;
+  const newBtn = $('new');
+  function disarm() { clearTimeout(armTimer); armTimer = null; newBtn.textContent = 'Start'; }
+  newBtn.addEventListener('click', () => {
+    if (!state.winner && state.turnNo > 2 && !armTimer) {
+      newBtn.textContent = 'Click again to abandon this game';
+      armTimer = setTimeout(disarm, 4000);
+      return;
+    }
+    disarm();
     start(parseInt($('size').value, 10), $('mode').value);
+  });
+
+  // Real fullscreen when the page allows it; otherwise hide the side panel so the board fills the window.
+  function setFocus(on) { document.body.classList.toggle('focus', on); resize(); }
+  $('zfull').addEventListener('click', () => {
+    const fs = document.fullscreenElement;
+    if (fs) { document.exitFullscreen(); return; }
+    if (document.body.classList.contains('focus')) { setFocus(false); return; }
+    const el = document.documentElement;
+    const req = el.requestFullscreen && el.requestFullscreen();
+    if (req && req.catch) req.catch(() => setFocus(true)); else if (!req) setFocus(true);
+  });
+  document.addEventListener('fullscreenchange', () => { document.body.classList.toggle('focus', !!document.fullscreenElement); resize(); });
+  window.addEventListener('keydown', (ev) => {
+    if (ev.target.tagName === 'SELECT') return;
+    if (ev.key === '+' || ev.key === '=') zoomAt(1.4, W / 2, H / 2);
+    else if (ev.key === '-') zoomAt(1 / 1.4, W / 2, H / 2);
   });
   window.addEventListener('resize', resize);
 

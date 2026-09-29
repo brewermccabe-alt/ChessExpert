@@ -93,6 +93,23 @@
     }
 
     const tile = (x, y, fill) => { ctx.fillStyle = fill; ctx.fillRect(ox + x * s, oy + y * s, Math.ceil(s), Math.ceil(s)); };
+    // Each side's starting pocket: its own floor, border and label.
+    for (const color of ['w', 'b']) {
+      const k = E.pocket(state, color);
+      ctx.fillStyle = color === 'w' ? '#f3e2a9' : '#b9c3d6';
+      ctx.fillRect(ox + k.x * s, oy + k.y * s, k.w * s, k.h * s);
+      ctx.fillStyle = color === 'w' ? '#d9bd6a' : '#8f9cb6';
+      for (let yy = 0; yy < k.h; yy++) for (let xx = 0; xx < k.w; xx++) {
+        if ((xx + yy) % 2) ctx.fillRect(ox + (k.x + xx) * s, oy + (k.y + yy) * s, s, s);
+      }
+      ctx.strokeStyle = color === 'w' ? '#8a6d16' : '#3d4c6b'; ctx.lineWidth = Math.max(2, s * 0.09);
+      ctx.strokeRect(ox + k.x * s, oy + k.y * s, k.w * s, k.h * s);
+      if (s >= 12) {
+        ctx.fillStyle = ctx.strokeStyle; ctx.font = `bold ${Math.min(14, s * 0.4)}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        const ly = color === 'w' ? oy + (k.y - 0.5) * s : oy + (k.y + k.h + 0.5) * s;
+        ctx.fillText(color === 'w' ? "WHITE'S POCKET" : "BLACK'S POCKET", ox + (k.x + k.w / 2) * s, ly);
+      }
+    }
     if (state.last) { tile(state.last.from.x, state.last.from.y, 'rgba(240,200,60,.45)'); tile(state.last.to.x, state.last.to.y, 'rgba(240,200,60,.55)'); }
     if (sel) tile(sel.x, sel.y, 'rgba(70,140,255,.55)');
 

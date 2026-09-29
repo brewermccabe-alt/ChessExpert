@@ -62,6 +62,11 @@
     return s;
   }
 
+  /* The 2x8 starting pocket of each side: {x, y, w, h}. */
+  function pocket(s, color) {
+    return { x: s.size / 2 - 4, y: color === 'w' ? s.size - 2 : 0, w: 8, h: 2 };
+  }
+
   function add(s, type, color, x, y) {
     const p = { id: s.nextId++, type, color, x, y, xp: 0, steps: 0, acted: false };
     s.pieces.push(p);
@@ -235,7 +240,7 @@
     return s;
   }
 
-  root.Evo = { TYPES, EVOLVE, SIZES, newGame, moves, move, evolve, canEvolve, endTurn, attacked, pieceAt, other, actionsFor,
+  root.Evo = { pocket, TYPES, EVOLVE, SIZES, newGame, moves, move, evolve, canEvolve, endTurn, attacked, pieceAt, other, actionsFor,
     toJSON, fromJSON, hasAnyMove };
   if (typeof module !== 'undefined') module.exports = root.Evo;
 })(typeof window !== 'undefined' ? window : globalThis);

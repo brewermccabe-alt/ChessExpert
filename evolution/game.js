@@ -1,7 +1,8 @@
 /* Evolution Chess rules engine (no DOM; runs in the browser and in Node).
  *
  * Differences from chess:
- *  - Huge board (24, 40 or 64 squares wide) with a classic 2x8 army per side.
+ *  - Huge board (24, 40 or 64 squares wide) with a classic 2x8 army per side, starting in a 2x8 pocket attached to
+ *    each edge of the board. Captured pieces return to their pocket as Pawns.
  *  - Several actions per turn, each piece may act once per turn.
  *  - No check: capture the enemy King to win.
  *  - Pieces earn XP and evolve into stronger pieces. */
@@ -38,22 +39,31 @@
 
   const other = (c) => (c === 'w' ? 'b' : 'w');
   const idx = (s, x, y) => y * s.size + x;
-  const inside = (s, x, y) => x >= 0 && y >= 0 && x < s.size && y < s.size;
+  /* Layout: the main board is size x size (grid rows POCKET_H .. size+POCKET_H-1). Above and below it, each side has a
+   * 2x8 pocket attached as an extension of the board, centred on the board. Everything else outside is void. */
+  const POCKET_H = 2;
+  const inside = (s, x, y) => {
+    if (x < 0 || y < 0 || x >= s.size || y >= s.h) return false;
+    if (y >= POCKET_H && y < s.size + POCKET_H) return true;
+    const x0 = s.size / 2 - 4;
+    return x >= x0 && x < x0 + 8;
+  };
   const pieceAt = (s, x, y) => (inside(s, x, y) ? s.cells[idx(s, x, y)] : null);
   const pawnDir = (color) => (color === 'w' ? -1 : 1); // White starts at the bottom and moves up
-  const pawnStartRow = (s, color) => (color === 'w' ? s.size - 2 : 1);
+  const pawnStartRow = (s, color) => (color === 'w' ? s.size + POCKET_H : 1);
   const actionsFor = (size) => Math.max(3, Math.round(size / 8));
 
   function newGame(size) {
     if (!SIZES.includes(size)) size = 40;
-    const s = { size, cells: new Array(size * size).fill(null), pieces: [], turn: 'w', actionsLeft: actionsFor(size),
-      turnNo: 1, winner: null, nextId: 1, last: null };
-    // Classic 2x8 army, centred on the edge of the huge board.
+    const h = size + 2 * POCKET_H;
+    const s = { size, h, cells: new Array(size * h).fill(null), pieces: [], turn: 'w', actionsLeft: actionsFor(size),
+      turnNo: 1, winner: null, nextId: 1, last: null, pending: { w: 0, b: 0 }, returned: [] };
+    // Classic 2x8 army, starting in each side's pocket.
     const back = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
     const x0 = size / 2 - 4;
     for (const color of ['w', 'b']) {
       const pawnRow = pawnStartRow(s, color);
-      const backRow = color === 'w' ? size - 1 : 0;
+      const backRow = color === 'w' ? h - 1 : 0;
       for (let i = 0; i < 8; i++) {
         add(s, 'pawn', color, x0 + i, pawnRow);
         add(s, back[i], color, x0 + i, backRow);
@@ -62,9 +72,9 @@
     return s;
   }
 
-  /* The 2x8 starting pocket of each side: {x, y, w, h}. */
+  /* The 2x8 pocket of each side: {x, y, w, h}. It is the army's starting area and its home base. */
   function pocket(s, color) {
-    return { x: s.size / 2 - 4, y: color === 'w' ? s.size - 2 : 0, w: 8, h: 2 };
+    return { x: s.size / 2 - 4, y: color === 'w' ? s.size + POCKET_H : 0, w: 8, h: POCKET_H };
   }
 
   function add(s, type, color, x, y) {
@@ -182,12 +192,29 @@
     return s.pieces.some((p) => p.color === color && !p.acted && moves(s, p).length);
   }
 
+  /* Home base: pieces captured earlier come back as Pawns on free pocket squares (front row first). */
+  function respawn(s, color) {
+    const k = pocket(s, color);
+    const rows = color === 'w' ? [k.y, k.y + 1] : [k.y + 1, k.y];
+    for (const y of rows) {
+      for (let x = k.x; x < k.x + k.w && s.pending[color] > 0; x++) {
+        if (!s.cells[idx(s, x, y)]) {
+          add(s, 'pawn', color, x, y);
+          s.pending[color]--;
+          s.returned.push({ x, y, color });
+        }
+      }
+    }
+  }
+
   function endTurn(s) {
     if (s.winner) return;
     s.turn = other(s.turn);
     s.actionsLeft = actionsFor(s.size);
     s.turnNo++;
     for (const p of s.pieces) p.acted = false;
+    s.returned = [];
+    respawn(s, s.turn);
     if (!hasAnyMove(s, s.turn)) s.winner = 'draw';
   }
 
@@ -205,6 +232,7 @@
       res.xp += TYPES[victim.type].value;
       remove(s, victim);
       if (victim.type === 'king') s.winner = p.color;
+      else s.pending[victim.color]++;
     }
     s.cells[idx(s, p.x, p.y)] = null;
     if (p.type === 'pawn') {
@@ -225,12 +253,13 @@
 
   function toJSON(s) {
     return { size: s.size, turn: s.turn, actionsLeft: s.actionsLeft, turnNo: s.turnNo, winner: s.winner, nextId: s.nextId,
-      last: s.last, pieces: s.pieces.map((p) => [p.id, p.type, p.color, p.x, p.y, p.xp, p.steps, p.acted ? 1 : 0]) };
+      last: s.last, pending: s.pending, pieces: s.pieces.map((p) => [p.id, p.type, p.color, p.x, p.y, p.xp, p.steps, p.acted ? 1 : 0]) };
   }
 
   function fromJSON(j) {
-    const s = { size: j.size, cells: new Array(j.size * j.size).fill(null), pieces: [], turn: j.turn, actionsLeft: j.actionsLeft,
-      turnNo: j.turnNo, winner: j.winner, nextId: j.nextId, last: j.last };
+    const h = j.size + 2 * POCKET_H;
+    const s = { size: j.size, h, cells: new Array(j.size * h).fill(null), pieces: [], turn: j.turn, actionsLeft: j.actionsLeft,
+      turnNo: j.turnNo, winner: j.winner, nextId: j.nextId, last: j.last, pending: j.pending || { w: 0, b: 0 }, returned: [] };
     for (const [id, type, color, x, y, xp, steps, acted] of j.pieces) {
       if (!TYPES[type] || !inside(s, x, y)) throw new Error('bad save');
       const p = { id, type, color, x, y, xp, steps, acted: !!acted };
@@ -240,7 +269,7 @@
     return s;
   }
 
-  root.Evo = { pocket, TYPES, EVOLVE, SIZES, newGame, moves, move, evolve, canEvolve, endTurn, attacked, pieceAt, other, actionsFor,
+  root.Evo = { pocket, inside, POCKET_H, TYPES, EVOLVE, SIZES, newGame, moves, move, evolve, canEvolve, endTurn, attacked, pieceAt, other, actionsFor,
     toJSON, fromJSON, hasAnyMove };
   if (typeof module !== 'undefined') module.exports = root.Evo;
 })(typeof window !== 'undefined' ? window : globalThis);

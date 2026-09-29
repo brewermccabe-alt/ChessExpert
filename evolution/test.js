@@ -3,27 +3,55 @@ const assert = require('assert');
 const E = require('./game.js');
 const AI = require('./ai.js');
 
-// Setup
+// Test helper: put a piece on an arbitrary square
+function put(s, p, x, y) {
+  s.cells[p.y * s.size + p.x] = null;
+  p.x = x; p.y = y;
+  s.cells[y * s.size + x] = p;
+}
+
+// Setup: 32 pieces, each side in its own 2x8 pocket attached outside the main board
 for (const size of E.SIZES) {
   const s = E.newGame(size);
   assert.strictEqual(s.pieces.length, 32);
   assert.strictEqual(s.pieces.filter((p) => p.type === 'king').length, 2);
   assert.strictEqual(s.actionsLeft, E.actionsFor(size));
+  for (const color of ['w', 'b']) {
+    const k = E.pocket(s, color);
+    const mine = s.pieces.filter((p) => p.color === color);
+    assert.ok(mine.every((p) => p.x >= k.x && p.x < k.x + 8 && p.y >= k.y && p.y < k.y + 2), 'army starts in its pocket');
+  }
+  // Pockets are outside the main board and nothing exists beside them
+  assert.ok(E.inside(s, size / 2, 0) && E.inside(s, size / 2, s.h - 1));
+  assert.ok(!E.inside(s, 0, 0) && !E.inside(s, size - 1, s.h - 1), 'void beside the pockets');
+  assert.ok(E.inside(s, 0, 2) && E.inside(s, size - 1, size + 1), 'main board is fully playable');
 }
 
-// Pawn moves: single, double, diagonal capture only when an enemy is there
-let s = E.newGame(24);
-const pw = E.pieceAt(s, 10, 22);
+const S = 24, MAIN_TOP = 2, MAIN_BOTTOM = S + 1; // main board rows 2..25 on a 24 board
+const WP = S + 2; // white pawn row (front row of white's pocket)
+
+// Pawn moves: single, double from the pocket, out onto the board
+let s = E.newGame(S);
+const pw = E.pieceAt(s, 10, WP);
 assert.strictEqual(pw.type, 'pawn');
-assert.deepStrictEqual(E.moves(s, pw).map((m) => m.y).sort(), [20, 21]);
-assert.ok(E.move(s, pw.id, 10, 20));
-assert.strictEqual(E.move(s, pw.id, 10, 19), null, 'a piece acts once per turn');
+assert.deepStrictEqual(E.moves(s, pw).map((m) => m.y).sort((a, b) => a - b), [WP - 2, WP - 1]);
+assert.ok(E.move(s, pw.id, 10, WP - 2));
+assert.strictEqual(pw.y, MAIN_BOTTOM - 1, 'the pawn stepped out onto the main board');
+assert.strictEqual(E.move(s, pw.id, 10, WP - 3), null, 'a piece acts once per turn');
+
+// Pieces cannot walk into the void beside the pocket
+s = E.newGame(S);
+const wr = E.pieceAt(s, 8, S + 3); // white a-rook in the back row of the pocket
+assert.strictEqual(wr.type, 'rook');
+put(s, s.pieces.find((p) => p.color === 'w' && p.x === 8 && p.y === WP), 20, 10); // clear the pawn in front
+assert.ok(E.moves(s, wr).every((m) => E.inside(s, m.x, m.y)));
+assert.ok(!E.moves(s, wr).some((m) => m.x < 8), 'cannot move left into the void');
+assert.ok(E.moves(s, wr).some((m) => m.y < WP), 'can leave through the front');
 
 // Captures give XP, XP evolves, evolution is validated
-s = E.newGame(24);
-const w = E.pieceAt(s, 10, 22), b = E.pieceAt(s, 11, 1);
-s.cells[22 * 24 + 10] = null; w.x = 10; w.y = 10; s.cells[10 * 24 + 10] = w;
-s.cells[1 * 24 + 11] = null; b.x = 11; b.y = 9; s.cells[9 * 24 + 11] = b;
+s = E.newGame(S);
+const w = E.pieceAt(s, 10, WP), b = E.pieceAt(s, 11, 1);
+put(s, w, 10, 10); put(s, b, 11, 9);
 const r = E.move(s, w.id, 11, 9);
 assert.strictEqual(r.captured, 'pawn');
 assert.strictEqual(w.xp, 1);
@@ -35,31 +63,58 @@ assert.strictEqual(w.type, 'knight');
 assert.strictEqual(w.xp, 0);
 
 // Pawn march earns XP
-s = E.newGame(24);
-const m1 = E.pieceAt(s, 9, 22);
-s.cells[22 * 24 + 9] = null; m1.y = 12; s.cells[12 * 24 + 9] = m1; m1.steps = 5;
+s = E.newGame(S);
+const m1 = E.pieceAt(s, 9, WP);
+put(s, m1, 9, 12); m1.steps = 5;
 E.move(s, m1.id, 9, 11);
 assert.strictEqual(m1.xp, 1);
 
 // Slider range limit and blocking
-s = E.newGame(24);
+s = E.newGame(S);
 const q = s.pieces.find((p) => p.color === 'w' && p.type === 'queen');
 assert.strictEqual(E.moves(s, q).length, 0, 'queen starts boxed in');
-s.cells[q.y * 24 + q.x] = null; q.x = 12; q.y = 12; s.cells[12 * 24 + 12] = q;
+put(s, q, 12, 12);
 assert.ok(E.moves(s, q).every((m) => Math.max(Math.abs(m.x - 12), Math.abs(m.y - 12)) <= 10));
 assert.ok(E.attacked(s, 12, 5, 'w'));
 assert.ok(!E.attacked(s, 14, 5, 'w'));
 
 // Capturing the King wins
-s = E.newGame(24);
+s = E.newGame(S);
 const wk = s.pieces.find((p) => p.color === 'w' && p.type === 'king');
 const bk = s.pieces.find((p) => p.color === 'b' && p.type === 'king');
-s.cells[wk.y * 24 + wk.x] = null; wk.x = bk.x; wk.y = bk.y + 1; s.cells[wk.y * 24 + wk.x] = wk;
+put(s, wk, bk.x, bk.y + 1);
 E.move(s, wk.id, bk.x, bk.y);
 assert.strictEqual(s.winner, 'w');
 
+// Home base: a captured piece returns to its pocket as a Pawn at the start of its owner's next turn
+s = E.newGame(S);
+const attacker = E.pieceAt(s, 12, WP); // white pawn
+const victim = s.pieces.find((p) => p.color === 'b' && p.type === 'knight');
+put(s, victim, 13, 12); put(s, attacker, 12, 13);
+assert.strictEqual(s.pieces.length, 32);
+const cap = E.move(s, attacker.id, 13, 12);
+assert.strictEqual(cap.captured, 'knight');
+assert.strictEqual(s.pieces.length, 31);
+assert.strictEqual(s.pending.b, 1);
+E.endTurn(s); // now Black's turn: the knight returns as a pawn
+assert.strictEqual(s.turn, 'b');
+assert.strictEqual(s.pending.b, 0);
+assert.strictEqual(s.pieces.length, 32);
+assert.strictEqual(s.returned.length, 1);
+const back = E.pieceAt(s, s.returned[0].x, s.returned[0].y);
+assert.strictEqual(back.type, 'pawn');
+assert.strictEqual(back.xp, 0);
+const bp = E.pocket(s, 'b');
+assert.ok(back.x >= bp.x && back.x < bp.x + 8 && back.y < 2, 'returned into Black\'s pocket');
+
+// If the pocket is full the piece waits
+s = E.newGame(S);
+s.pending.w = 1;
+E.endTurn(s); E.endTurn(s); // back to White
+assert.strictEqual(s.pending.w, 1, 'pocket is full, so the piece waits');
+
 // Turn flips after all actions; save/load round-trips
-s = E.newGame(24);
+s = E.newGame(S);
 const n = s.actionsLeft;
 for (let i = 0; i < n; i++) {
   const p = s.pieces.find((q) => q.color === 'w' && !q.acted && E.moves(s, q).length);
@@ -67,6 +122,7 @@ for (let i = 0; i < n; i++) {
   assert.ok(E.move(s, p.id, m.x, m.y));
 }
 assert.strictEqual(s.turn, 'b');
+s.pending.w = 2;
 const copy = E.fromJSON(JSON.parse(JSON.stringify(E.toJSON(s))));
 assert.deepStrictEqual(E.toJSON(copy), E.toJSON(s));
 

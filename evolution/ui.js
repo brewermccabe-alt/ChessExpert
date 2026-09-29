@@ -5,7 +5,7 @@
   const $ = (id) => document.getElementById(id);
   const canvas = $('board'), ctx = canvas.getContext('2d');
   const mini = $('mini'), mctx = mini.getContext('2d');
-  const SAVE_KEY = 'evolution-chess-save-v3';
+  const SAVE_KEY = 'evolution-chess-save-v4';
   const GLYPH = { pawn: '♟', knight: '♞', bishop: '♝', rook: '♜', nightrider: '♞', queen: '♛', amazon: '♛', king: '♚' };
   const BADGE = { nightrider: 'N', amazon: 'A' };
   const TIER_COLOR = { pawn: '#9a9a9a', knight: '#c98b4a', bishop: '#c98b4a', rook: '#b8c2cc', nightrider: '#b8c2cc',
@@ -32,25 +32,33 @@
 
   /* ---------- helpers ---------- */
 
-  const label = (x, y) => `${x + 1},${state.size - y}`;
+  const label = (x, y) => {
+    const T = E.POCKET_H;
+    if (y < T) return `B pocket ${x + 1}`;
+    if (y >= state.size + T) return `W pocket ${x + 1}`;
+    return `${x + 1},${state.size + T - y}`;
+  };
   const isHuman = (color) => mode === 'hot' || color === 'w';
   const myTurn = () => !state.winner && !aiBusy && isHuman(state.turn);
   const nameOf = (p) => E.TYPES[p.type].name;
+  function logReturns() {
+    for (const r of state.returned || []) log(`${SIDE[r.color][0]}: a captured piece returns to its pocket as a Pawn.`, 'evo');
+  }
   function log(text, cls) { logLines.push({ t: text, c: cls || '' }); if (logLines.length > 200) logLines.shift(); }
 
-  function minScale() { return Math.max(3, Math.min(W, H) / state.size); }
+  function minScale() { return Math.max(3, Math.min(W, H) / state.h); }
   function clampCam() {
     cam.s = Math.min(72, Math.max(minScale() * 0.9, cam.s));
     cam.x = Math.min(state.size + 2, Math.max(-2, cam.x));
-    cam.y = Math.min(state.size + 2, Math.max(-2, cam.y));
+    cam.y = Math.min(state.h + 2, Math.max(-2, cam.y));
   }
   function centerOn(x, y) { cam.x = x + 0.5; cam.y = y + 0.5; clampCam(); dirty = true; }
   function goHome() {
     cam.s = Math.min(34, Math.max(minScale(), Math.min(W, H) / 22));
     const color = mode === 'hot' ? state.turn : 'w';
-    centerOn(state.size / 2, color === 'w' ? state.size - 10 : 9);
+    centerOn(state.size / 2, color === 'w' ? state.h - 10 : 9);
   }
-  function fit() { cam.s = minScale(); centerOn(state.size / 2 - 0.5, state.size / 2 - 0.5); }
+  function fit() { cam.s = minScale(); centerOn(state.size / 2 - 0.5, state.h / 2 - 0.5); }
   function ensureVisible(x, y) {
     const sx = (x + 0.5 - cam.x) * cam.s + W / 2, sy = (y + 0.5 - cam.y) * cam.s + H / 2;
     if (sx < 30 || sy < 30 || sx > W - 30 || sy > H - 30) centerOn(x, y);
@@ -69,45 +77,44 @@
   function draw() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = '#2b2a27'; ctx.fillRect(0, 0, W, H);
-    const N = state.size, s = cam.s;
+    const N = state.size, GH = state.h, T = E.POCKET_H, s = cam.s;
     const ox = W / 2 - cam.x * s, oy = H / 2 - cam.y * s;
     const x0 = Math.max(0, Math.floor(-ox / s)), x1 = Math.min(N - 1, Math.ceil((W - ox) / s));
-    const y0 = Math.max(0, Math.floor(-oy / s)), y1 = Math.min(N - 1, Math.ceil((H - oy) / s));
+    const y0 = Math.max(0, Math.floor(-oy / s)), y1 = Math.min(GH - 1, Math.ceil((H - oy) / s));
 
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-      ctx.fillStyle = (x + y) % 2 ? '#7d9a6e' : '#e6e0c8';
+      if (!E.inside(state, x, y)) continue;
+      const main = y >= T && y < N + T;
+      if (main) ctx.fillStyle = (x + y) % 2 ? '#7d9a6e' : '#e6e0c8';
+      else ctx.fillStyle = y < T ? ((x + y) % 2 ? '#8f9cb6' : '#b9c3d6') : ((x + y) % 2 ? '#d9bd6a' : '#f3e2a9');
       ctx.fillRect(ox + x * s, oy + y * s, Math.ceil(s), Math.ceil(s));
     }
-    // Grid markers every 8 squares (helps you keep your bearings)
+    // Grid markers every 8 squares of the main board (helps you keep your bearings)
     ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 1.5; ctx.beginPath();
     for (let i = 0; i <= N; i += 8) {
-      ctx.moveTo(ox + i * s, oy); ctx.lineTo(ox + i * s, oy + N * s);
-      ctx.moveTo(ox, oy + i * s); ctx.lineTo(ox + N * s, oy + i * s);
+      ctx.moveTo(ox + i * s, oy + T * s); ctx.lineTo(ox + i * s, oy + (N + T) * s);
+      ctx.moveTo(ox, oy + (T + i) * s); ctx.lineTo(ox + N * s, oy + (T + i) * s);
     }
     ctx.stroke();
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 3; ctx.strokeRect(ox, oy, N * s, N * s);
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 3; ctx.strokeRect(ox, oy + T * s, N * s, N * s);
     if (s >= 16) {
       ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.font = '10px system-ui'; ctx.textBaseline = 'top'; ctx.textAlign = 'left';
-      for (let x = x0; x <= x1; x++) if (x % 8 === 0) ctx.fillText(String(x + 1), ox + x * s + 2, Math.max(oy, 0) + 2);
-      for (let y = y0; y <= y1; y++) if (y % 8 === 0) ctx.fillText(String(N - y), Math.max(ox, 0) + 2, oy + y * s + 2 + (y === 0 ? 10 : 0));
+      for (let x = x0; x <= x1; x++) if (x % 8 === 0) ctx.fillText(String(x + 1), ox + x * s + 2, oy + T * s + 2);
+      for (let y = Math.max(y0, T); y <= Math.min(y1, N + T - 1); y++) if ((y - T) % 8 === 0) ctx.fillText(String(N - (y - T)), Math.max(ox, 0) + 2, oy + y * s + 2 + (y === T ? 10 : 0));
     }
 
     const tile = (x, y, fill) => { ctx.fillStyle = fill; ctx.fillRect(ox + x * s, oy + y * s, Math.ceil(s), Math.ceil(s)); };
-    // Each side's starting pocket: its own floor, border and label.
+    // Each side's pocket is an extension of the board: outlined and labelled, with pieces waiting to come back.
     for (const color of ['w', 'b']) {
       const k = E.pocket(state, color);
-      ctx.fillStyle = color === 'w' ? '#f3e2a9' : '#b9c3d6';
-      ctx.fillRect(ox + k.x * s, oy + k.y * s, k.w * s, k.h * s);
-      ctx.fillStyle = color === 'w' ? '#d9bd6a' : '#8f9cb6';
-      for (let yy = 0; yy < k.h; yy++) for (let xx = 0; xx < k.w; xx++) {
-        if ((xx + yy) % 2) ctx.fillRect(ox + (k.x + xx) * s, oy + (k.y + yy) * s, s, s);
-      }
       ctx.strokeStyle = color === 'w' ? '#8a6d16' : '#3d4c6b'; ctx.lineWidth = Math.max(2, s * 0.09);
       ctx.strokeRect(ox + k.x * s, oy + k.y * s, k.w * s, k.h * s);
       if (s >= 12) {
-        ctx.fillStyle = ctx.strokeStyle; ctx.font = `bold ${Math.min(14, s * 0.4)}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        const ly = color === 'w' ? oy + (k.y - 0.5) * s : oy + (k.y + k.h + 0.5) * s;
-        ctx.fillText(color === 'w' ? "WHITE'S POCKET" : "BLACK'S POCKET", ox + (k.x + k.w / 2) * s, ly);
+        const waiting = state.pending[color];
+        const text = `${color === 'w' ? "WHITE'S" : "BLACK'S"} POCKET` + (waiting ? ` · ${waiting} returning` : '');
+        ctx.fillStyle = '#e8e2cf'; ctx.font = `bold ${Math.min(14, s * 0.4)}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        const ly = color === 'w' ? oy + (k.y + k.h + 0.5) * s : oy + (k.y - 0.5) * s;
+        ctx.fillText(text, ox + (k.x + k.w / 2) * s, ly);
       }
     }
     if (state.last) { tile(state.last.from.x, state.last.from.y, 'rgba(240,200,60,.45)'); tile(state.last.to.x, state.last.to.y, 'rgba(240,200,60,.55)'); }
@@ -164,15 +171,16 @@
   }
 
   function drawMini() {
-    const m = mini.width, N = state.size, k = m / N;
-    mctx.fillStyle = '#2f3a30'; mctx.fillRect(0, 0, m, m);
+    const m = mini.width, N = state.size, T = E.POCKET_H, k = m / state.h, offX = (m - N * k) / 2;
+    mctx.fillStyle = '#1b1c1b'; mctx.fillRect(0, 0, m, m);
+    mctx.fillStyle = '#2f3a30'; mctx.fillRect(offX, T * k, N * k, N * k);
     for (const p of state.pieces) {
       mctx.fillStyle = p.color === 'w' ? '#fff' : '#f05a4a';
       const d = p.type === 'king' ? 4 : Math.max(1.5, k * 0.9);
-      mctx.fillRect(p.x * k, p.y * k, d, d);
+      mctx.fillRect(offX + p.x * k, p.y * k, d, d);
     }
     mctx.strokeStyle = '#ffd23f'; mctx.lineWidth = 1.5;
-    mctx.strokeRect((cam.x - W / 2 / cam.s) * k, (cam.y - H / 2 / cam.s) * k, (W / cam.s) * k, (H / cam.s) * k);
+    mctx.strokeRect(offX + (cam.x - W / 2 / cam.s) * k, (cam.y - H / 2 / cam.s) * k, (W / cam.s) * k, (H / cam.s) * k);
   }
 
   function loop() {
@@ -228,6 +236,7 @@
   function afterAction(prevTurn) {
     if (state.turn !== prevTurn && !state.winner) {
       log(`— ${SIDE[state.turn]}'s turn —`, 'turn');
+      logReturns();
       if (mode === 'hot') goHome();
     }
     if (state.winner) log(state.winner === 'draw' ? 'Draw.' : `${SIDE[state.winner]} wins!`, 'evo');
@@ -275,6 +284,7 @@
       if (a.type === 'end') {
         E.endTurn(state);
         log(`— ${SIDE[state.turn]}'s turn —`, 'turn');
+        logReturns();
         aiBusy = false; refresh(); return;
       }
       if (a.type === 'evolve') {
@@ -290,7 +300,7 @@
         if (r.xp) txt += ` (+${r.xp} XP)`;
         log(txt, (r.captured ? 'cap ' : '') + 'b');
         ensureVisible(a.x, a.y);
-        if (state.turn !== turnBefore && !state.winner) log(`— ${SIDE[state.turn]}'s turn —`, 'turn');
+        if (state.turn !== turnBefore && !state.winner) { log(`— ${SIDE[state.turn]}'s turn —`, 'turn'); logReturns(); }
         if (state.winner) log(state.winner === 'draw' ? 'Draw.' : `${SIDE[state.winner]} wins!`, 'evo');
       }
       if (state.winner || state.turn !== 'b') aiBusy = false;
@@ -353,7 +363,7 @@
   }, { passive: false });
 
   function click(x, y) {
-    if (x < 0 || y < 0 || x >= state.size || y >= state.size) { select(null); return; }
+    if (!E.inside(state, x, y)) { select(null); return; }
     const p = E.pieceAt(state, x, y);
     if (sel && myTurn() && targets.some((t) => t.x === x && t.y === y)) { doMove(sel, x, y); return; }
     select(p && p !== sel ? p : null);
@@ -361,7 +371,7 @@
 
   mini.addEventListener('pointerdown', (ev) => {
     const r = mini.getBoundingClientRect();
-    const go = (e) => centerOn(((e.clientX - r.left) / r.width) * state.size - 0.5, ((e.clientY - r.top) / r.height) * state.size - 0.5);
+    const go = (e) => centerOn(((e.clientX - r.left) / r.width - (1 - state.size / state.h) / 2) * state.h - 0.5, ((e.clientY - r.top) / r.height) * state.h - 0.5);
     go(ev);
     mini.setPointerCapture(ev.pointerId);
     const mv = (e) => go(e);

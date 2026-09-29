@@ -1,7 +1,7 @@
 /* Evolution Chess rules engine (no DOM; runs in the browser and in Node).
  *
  * Differences from chess:
- *  - Huge board (24, 40 or 64 squares wide) and a big army per side.
+ *  - Huge board (24, 40 or 64 squares wide) with a classic 2x8 army per side.
  *  - Several actions per turn, each piece may act once per turn.
  *  - No check: capture the enemy King to win.
  *  - Pieces earn XP and evolve into stronger pieces. */
@@ -48,17 +48,15 @@
     if (!SIZES.includes(size)) size = 40;
     const s = { size, cells: new Array(size * size).fill(null), pieces: [], turn: 'w', actionsLeft: actionsFor(size),
       turnNo: 1, winner: null, nextId: 1, last: null };
-    const back = ['rook', 'knight', 'bishop', 'bishop', 'knight', 'rook'];
-    const mid = Math.floor(size / 2);
+    // Classic 2x8 army, centred on the edge of the huge board.
+    const back = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
+    const x0 = size / 2 - 4;
     for (const color of ['w', 'b']) {
       const pawnRow = pawnStartRow(s, color);
       const backRow = color === 'w' ? size - 1 : 0;
-      for (let x = 0; x < size; x++) {
-        add(s, 'pawn', color, x, pawnRow);
-        let t = back[x % back.length];
-        if (x === mid) t = 'king';
-        else if (x === mid - 1) t = 'queen';
-        add(s, t, color, x, backRow);
+      for (let i = 0; i < 8; i++) {
+        add(s, 'pawn', color, x0 + i, pawnRow);
+        add(s, back[i], color, x0 + i, backRow);
       }
     }
     return s;

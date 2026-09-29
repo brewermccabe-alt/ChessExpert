@@ -58,7 +58,7 @@ Puzzle ids come from the position and first move, so rebuilding keeps each playe
 
 ## Evolution Chess (variant)
 
-A separate, playable chess variant in [`evolution/`](evolution/index.html) (open `evolution/index.html`, no build step). It's played on a vast 24, 40 or 64 square board with a big army per side:
+A separate, playable chess variant in [`evolution/`](evolution/index.html) (open `evolution/index.html`, no build step). It's played on a vast 24, 40 or 64 square board, but each side starts with a classic 2×8 army (pawns plus R N B Q K B N R) centred at its edge, leaving a huge empty middle to cross:
 
 - **Piece evolution:** pieces earn XP by capturing (and pawns by marching) and evolve for free: Pawn → Knight/Bishop → Rook/Nightrider → Queen → Amazon (queen + knight).
 - **Multiple actions per turn** (board width ÷ 8), each piece acting once, and **no check**: capture the enemy King to win.

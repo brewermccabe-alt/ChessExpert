@@ -56,6 +56,15 @@ node tools/build-puzzles.js js/puzzles.js out*.jsonl                    # valida
 
 Puzzle ids come from the position and first move, so rebuilding keeps each player's progress.
 
+## Evolution Chess (variant)
+
+A separate, playable chess variant in [`evolution/`](evolution/index.html) (open `evolution/index.html`, no build step). It's played on a vast 24, 40 or 64 square board with a big army per side:
+
+- **Piece evolution:** pieces earn XP by capturing (and pawns by marching) and evolve for free: Pawn → Knight/Bishop → Rook/Nightrider → Queen → Amazon (queen + knight).
+- **Multiple actions per turn** (board width ÷ 8), each piece acting once, and **no check**: capture the enemy King to win.
+- Play a greedy computer opponent or a friend on one screen. Pan, zoom, and a minimap keep the huge board manageable. The game autosaves.
+- Rules engine and AI live in `evolution/game.js` and `evolution/ai.js`; run `node evolution/test.js` to test them.
+
 ## Credits
 
 - [chess.js](https://github.com/jhlywa/chess.js), BSD-2-Clause (`vendor/chess.js.LICENSE`)

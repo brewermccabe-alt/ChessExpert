@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Evolution Chess</title>
+  <meta name="description" content="A chess variant on a vast board where pieces earn XP and evolve.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>♛</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="layout">
+    <div class="stage">
+      <canvas id="board" aria-label="Game board"></canvas>
+      <canvas id="mini" width="150" height="150" aria-label="Minimap"></canvas>
+      <div class="zoom">
+        <button id="zin" type="button" title="Zoom in">+</button>
+        <button id="zout" type="button" title="Zoom out">−</button>
+        <button id="zfit" type="button" title="See the whole board">⤢</button>
+        <button id="zhome" type="button" title="Jump to your army">⌂</button>
+      </div>
+      <div id="banner" hidden></div>
+    </div>
+    <aside class="panel">
+      <h1>♛ Evolution Chess</h1>
+      <div class="turnbox">
+        <div id="turn" class="turn"></div>
+        <div id="actions" class="actions"></div>
+        <button id="end" type="button" class="primary">End turn</button>
+      </div>
+      <section id="info" class="info"></section>
+      <section>
+        <h2>Log</h2>
+        <ol id="log" class="log"></ol>
+      </section>
+      <section class="newgame">
+        <h2>New game</h2>
+        <label>Board
+          <select id="size">
+            <option value="24">24 × 24 (large)</option>
+            <option value="40" selected>40 × 40 (vast)</option>
+            <option value="64">64 × 64 (epic)</option>
+          </select>
+        </label>
+        <label>Mode
+          <select id="mode">
+            <option value="ai" selected>You (White) vs Computer</option>
+            <option value="hot">Two players, one screen</option>
+          </select>
+        </label>
+        <button id="new" type="button">Start</button>
+      </section>
+      <details class="rules">
+        <summary>Rules</summary>
+        <ul>
+          <li><b>Goal:</b> capture the enemy King. There is no check.</li>
+          <li><b>Turns:</b> you get several actions per turn (board width ÷ 8, at least 3). Each piece can act once per turn. Evolving is free.</li>
+          <li><b>XP:</b> capturing earns XP equal to the victim's value (Pawn 1, Knight/Bishop 2, Rook/Nightrider 3, Queen 5, Amazon 7). Pawns also earn 1 XP for every 6 squares they march.</li>
+          <li><b>Evolution:</b> when a piece has enough XP (gold glow), select it and pick what it becomes.
+            <ul>
+              <li>Pawn (2 XP) → Knight or Bishop</li>
+              <li>Knight / Bishop (3 XP) → Rook or Nightrider</li>
+              <li>Rook / Nightrider (5 XP) → Queen</li>
+              <li>Queen (8 XP) → Amazon (queen + knight)</li>
+            </ul>
+          </li>
+          <li><b>Range:</b> sliding pieces have a limited reach that grows as they evolve: Bishop 6, Rook 8, Queen 10, Amazon 12. A Nightrider repeats its knight jump up to 4 times.</li>
+          <li><b>Pawns</b> move 1 (2 from the start), capture diagonally. No en passant.</li>
+          <li><b>View:</b> drag to pan, scroll or pinch to zoom, click the minimap to jump.</li>
+        </ul>
+      </details>
+    </aside>
+  </div>
+  <script src="game.js"></script>
+  <script src="ai.js"></script>
+  <script src="ui.js"></script>
+</body>
+</html>

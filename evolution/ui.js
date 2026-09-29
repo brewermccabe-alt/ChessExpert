@@ -403,4 +403,5 @@
   else start(40, 'ai');
   if (!state.winner && mode === 'ai' && state.turn === 'b') runAI();
   requestAnimationFrame(loop);
+  const status = $('status'); if (status && status.className !== 'err') status.hidden = true;
 })();

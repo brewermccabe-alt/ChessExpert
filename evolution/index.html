@@ -9,6 +9,14 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <div id="status" role="alert">Loading… If this message stays, your browser is not running the game's JavaScript (try opening this file in a normal Chrome tab, or serve it from GitHub Pages).</div>
+  <noscript><div class="status-err">JavaScript is turned off, so the game cannot run.</div></noscript>
+  <script>
+    window.addEventListener('error', function (e) {
+      var s = document.getElementById('status');
+      if (s) { s.hidden = false; s.className = 'err'; s.textContent = 'Error: ' + e.message + ' (' + String(e.filename).split('/').pop() + ':' + e.lineno + ')'; }
+    });
+  </script>
   <div class="layout">
     <div class="stage">
       <canvas id="board" aria-label="Game board"></canvas>

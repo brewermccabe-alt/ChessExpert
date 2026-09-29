@@ -2,7 +2,8 @@
  *
  * Differences from chess:
  *  - Huge board (24, 40 or 64 squares wide) with a classic 2x8 army per side, starting in a 2x8 pocket attached to
- *    each edge of the board. Captured pieces return to their pocket as Pawns.
+ *    each edge of the board. Captured pieces are placed back in their pocket as
+ *    Pawns (Recruits that cannot capture until they step out).
  *  - Several actions per turn, each piece may act once per turn.
  *  - No check: capture the enemy King to win.
  *  - Pieces earn XP and evolve into stronger pieces. */
@@ -57,7 +58,7 @@
     if (!SIZES.includes(size)) size = 40;
     const h = size + 2 * POCKET_H;
     const s = { size, h, cells: new Array(size * h).fill(null), pieces: [], turn: 'w', actionsLeft: actionsFor(size),
-      turnNo: 1, winner: null, nextId: 1, last: null, pending: { w: 0, b: 0 }, returned: [] };
+      turnNo: 1, winner: null, nextId: 1, last: null, pending: { w: 0, b: 0 } };
     // Classic 2x8 army, starting in each side's pocket.
     const back = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
     const x0 = size / 2 - 4;
@@ -130,19 +131,20 @@
         for (const [dx, dy] of KNIGHT) for (let i = 1; i <= range; i++) if (!push(p.x + dx * i, p.y + dy * i)) break;
         break;
     }
-    return out;
+    return p.recruit ? out.filter((m) => !m.capture) : out;
   }
 
   /* Can `byColor` capture on (x, y)? Used by the AI and for danger highlights. */
   function attacked(s, x, y, byColor) {
     const d = pawnDir(byColor);
+    const live = (t) => t && t.color === byColor && !t.recruit;
     for (const dx of [-1, 1]) {
       const t = pieceAt(s, x + dx, y - d);
-      if (t && t.color === byColor && t.type === 'pawn') return true;
+      if (live(t) && t.type === 'pawn') return true;
     }
     for (const [dx, dy] of KNIGHT) {
       const t = pieceAt(s, x + dx, y + dy);
-      if (t && t.color === byColor && (t.type === 'knight' || t.type === 'amazon')) return true;
+      if (live(t) && (t.type === 'knight' || t.type === 'amazon')) return true;
     }
     const ray = (dirs, types) => {
       for (const [dx, dy] of dirs) {
@@ -151,7 +153,7 @@
           if (!inside(s, nx, ny)) break;
           const t = s.cells[idx(s, nx, ny)];
           if (!t) continue;
-          if (t.color === byColor && types.includes(t.type) && i <= TYPES[t.type].range) return true;
+          if (live(t) && types.includes(t.type) && i <= TYPES[t.type].range) return true;
           break;
         }
       }
@@ -165,7 +167,7 @@
         if (!inside(s, nx, ny)) break;
         const t = s.cells[idx(s, nx, ny)];
         if (!t) continue;
-        if (t.color === byColor && t.type === 'nightrider') return true;
+        if (live(t) && t.type === 'nightrider') return true;
         break;
       }
     }
@@ -192,19 +194,31 @@
     return s.pieces.some((p) => p.color === color && !p.acted && moves(s, p).length);
   }
 
-  /* Home base: pieces captured earlier come back as Pawns on free pocket squares (front row first). */
-  function respawn(s, color) {
+  const inPocket = (s, color, x, y) => {
+    const k = pocket(s, color);
+    return x >= k.x && x < k.x + k.w && y >= k.y && y < k.y + k.h;
+  };
+
+  /* Free squares of a side's pocket, front row first. */
+  function freePocketSquares(s, color) {
     const k = pocket(s, color);
     const rows = color === 'w' ? [k.y, k.y + 1] : [k.y + 1, k.y];
-    for (const y of rows) {
-      for (let x = k.x; x < k.x + k.w && s.pending[color] > 0; x++) {
-        if (!s.cells[idx(s, x, y)]) {
-          add(s, 'pawn', color, x, y);
-          s.pending[color]--;
-          s.returned.push({ x, y, color });
-        }
-      }
-    }
+    const out = [];
+    for (const y of rows) for (let x = k.x; x < k.x + k.w; x++) if (!s.cells[idx(s, x, y)]) out.push({ x, y });
+    return out;
+  }
+
+  /* Home base: a captured piece waits (s.pending) until its owner places it, as a Pawn, on any free square of their
+   * pocket. Placing is free. A returned Pawn is a Recruit: it cannot capture or threaten anything until it steps out
+   * of the pocket. */
+  function place(s, x, y) {
+    if (s.winner || !s.pending[s.turn]) return null;
+    if (!inPocket(s, s.turn, x, y) || s.cells[idx(s, x, y)]) return null;
+    const p = add(s, 'pawn', s.turn, x, y);
+    p.recruit = true;
+    s.pending[s.turn]--;
+    s.last = { from: { x, y }, to: { x, y } };
+    return { id: p.id, x, y, color: p.color };
   }
 
   function endTurn(s) {
@@ -213,8 +227,6 @@
     s.actionsLeft = actionsFor(s.size);
     s.turnNo++;
     for (const p of s.pieces) p.acted = false;
-    s.returned = [];
-    respawn(s, s.turn);
     if (!hasAnyMove(s, s.turn)) s.winner = 'draw';
   }
 
@@ -242,6 +254,7 @@
     }
     p.x = x; p.y = y;
     s.cells[idx(s, x, y)] = p;
+    if (p.recruit && !inPocket(s, p.color, x, y)) p.recruit = false;
     if (p.type !== 'king') p.xp += res.xp;
     p.acted = true;
     res.ready = canEvolve(p);
@@ -253,23 +266,23 @@
 
   function toJSON(s) {
     return { size: s.size, turn: s.turn, actionsLeft: s.actionsLeft, turnNo: s.turnNo, winner: s.winner, nextId: s.nextId,
-      last: s.last, pending: s.pending, pieces: s.pieces.map((p) => [p.id, p.type, p.color, p.x, p.y, p.xp, p.steps, p.acted ? 1 : 0]) };
+      last: s.last, pending: s.pending, pieces: s.pieces.map((p) => [p.id, p.type, p.color, p.x, p.y, p.xp, p.steps, p.acted ? 1 : 0, p.recruit ? 1 : 0]) };
   }
 
   function fromJSON(j) {
     const h = j.size + 2 * POCKET_H;
     const s = { size: j.size, h, cells: new Array(j.size * h).fill(null), pieces: [], turn: j.turn, actionsLeft: j.actionsLeft,
-      turnNo: j.turnNo, winner: j.winner, nextId: j.nextId, last: j.last, pending: j.pending || { w: 0, b: 0 }, returned: [] };
-    for (const [id, type, color, x, y, xp, steps, acted] of j.pieces) {
+      turnNo: j.turnNo, winner: j.winner, nextId: j.nextId, last: j.last, pending: j.pending || { w: 0, b: 0 } };
+    for (const [id, type, color, x, y, xp, steps, acted, recruit] of j.pieces) {
       if (!TYPES[type] || !inside(s, x, y)) throw new Error('bad save');
-      const p = { id, type, color, x, y, xp, steps, acted: !!acted };
+      const p = { id, type, color, x, y, xp, steps, acted: !!acted, recruit: !!recruit };
       s.pieces.push(p);
       s.cells[idx(s, x, y)] = p;
     }
     return s;
   }
 
-  root.Evo = { pocket, inside, POCKET_H, TYPES, EVOLVE, SIZES, newGame, moves, move, evolve, canEvolve, endTurn, attacked, pieceAt, other, actionsFor,
+  root.Evo = { pocket, inside, POCKET_H, place, freePocketSquares, inPocket, TYPES, EVOLVE, SIZES, newGame, moves, move, evolve, canEvolve, endTurn, attacked, pieceAt, other, actionsFor,
     toJSON, fromJSON, hasAnyMove };
   if (typeof module !== 'undefined') module.exports = root.Evo;
 })(typeof window !== 'undefined' ? window : globalThis);

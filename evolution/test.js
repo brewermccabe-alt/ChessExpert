@@ -86,32 +86,57 @@ put(s, wk, bk.x, bk.y + 1);
 E.move(s, wk.id, bk.x, bk.y);
 assert.strictEqual(s.winner, 'w');
 
-// Home base: a captured piece returns to its pocket as a Pawn at the start of its owner's next turn
+// Home base: a captured piece waits until its owner places it on any free pocket square
 s = E.newGame(S);
 const attacker = E.pieceAt(s, 12, WP); // white pawn
 const victim = s.pieces.find((p) => p.color === 'b' && p.type === 'knight');
 put(s, victim, 13, 12); put(s, attacker, 12, 13);
-assert.strictEqual(s.pieces.length, 32);
 const cap = E.move(s, attacker.id, 13, 12);
 assert.strictEqual(cap.captured, 'knight');
 assert.strictEqual(s.pieces.length, 31);
 assert.strictEqual(s.pending.b, 1);
-E.endTurn(s); // now Black's turn: the knight returns as a pawn
+assert.strictEqual(E.place(s, 8, 0), null, 'not Black\'s turn yet, and pending belongs to Black');
+E.endTurn(s);
 assert.strictEqual(s.turn, 'b');
-assert.strictEqual(s.pending.b, 0);
-assert.strictEqual(s.pieces.length, 32);
-assert.strictEqual(s.returned.length, 1);
-const back = E.pieceAt(s, s.returned[0].x, s.returned[0].y);
-assert.strictEqual(back.type, 'pawn');
-assert.strictEqual(back.xp, 0);
+assert.strictEqual(s.pieces.length, 31, 'nothing is placed automatically');
 const bp = E.pocket(s, 'b');
-assert.ok(back.x >= bp.x && back.x < bp.x + 8 && back.y < 2, 'returned into Black\'s pocket');
+// The knight's old square is free; free one more so the player has a real choice of where to place it
+const gone = E.pieceAt(s, bp.x + 5, 1);
+s.cells[gone.y * S + gone.x] = null; s.pieces.splice(s.pieces.indexOf(gone), 1);
+assert.strictEqual(E.place(s, bp.x + 5, 0), null, 'occupied square');
+assert.strictEqual(E.place(s, 12, 12), null, 'must be inside your own pocket');
+assert.strictEqual(E.place(s, E.pocket(s, 'w').x, E.pocket(s, 'w').y), null, 'not the enemy pocket');
+assert.deepStrictEqual(E.freePocketSquares(s, 'b'), [{ x: bp.x + 5, y: 1 }, { x: 9, y: 0 }], 'front row first, any free square');
+const placed = E.place(s, bp.x + 5, 1);
+assert.ok(placed);
+const rec = E.pieceAt(s, bp.x + 5, 1);
+assert.strictEqual(rec.type, 'pawn');
+assert.strictEqual(rec.xp, 0);
+assert.ok(rec.recruit);
+assert.strictEqual(s.pending.b, 0);
+assert.strictEqual(E.place(s, bp.x + 5, 1), null, 'nothing left to place');
 
-// If the pocket is full the piece waits
+// Recruits cannot capture or threaten while in the pocket; they become normal once they step out
 s = E.newGame(S);
-s.pending.w = 1;
-E.endTurn(s); E.endTurn(s); // back to White
-assert.strictEqual(s.pending.w, 1, 'pocket is full, so the piece waits');
+E.endTurn(s); // Black to move
+const rp = E.pocket(s, 'b');
+const recruit = E.pieceAt(s, rp.x + 2, 1);
+recruit.recruit = true;
+// Isolate the recruit: remove every other Black piece except the King
+for (const p of [...s.pieces]) {
+  if (p.color === 'b' && p !== recruit && p.type !== 'king') { s.cells[p.y * S + p.x] = null; s.pieces.splice(s.pieces.indexOf(p), 1); }
+}
+const target = s.pieces.find((p) => p.color === 'w' && p.type === 'pawn');
+put(s, target, recruit.x + 1, recruit.y + 1); // main board row 2, diagonal to the recruit
+assert.ok(!E.moves(s, recruit).some((m) => m.capture), 'recruit cannot capture');
+assert.ok(!E.attacked(s, target.x, target.y, 'b'), 'recruit does not threaten');
+recruit.recruit = false;
+assert.ok(E.moves(s, recruit).some((m) => m.capture), 'a normal pawn could capture there');
+assert.ok(E.attacked(s, target.x, target.y, 'b'));
+recruit.recruit = true;
+put(s, target, 20, 20);
+assert.ok(E.move(s, recruit.id, recruit.x, recruit.y + 1)); // steps out onto the main board
+assert.ok(!recruit.recruit, 'stepping out ends recruit status');
 
 // Turn flips after all actions; save/load round-trips
 s = E.newGame(S);
@@ -134,6 +159,7 @@ for (const size of [24, 40]) {
   while (!s.winner && s.turnNo < 300 && guard++ < 20000) {
     const a = AI.chooseAction(s);
     if (a.type === 'end') E.endTurn(s);
+    else if (a.type === 'place') assert.ok(E.place(s, a.x, a.y), 'AI made an illegal placement');
     else if (a.type === 'evolve') assert.ok(E.evolve(s, a.id, a.to));
     else assert.ok(E.move(s, a.id, a.x, a.y), 'AI made an illegal move');
   }

@@ -15,6 +15,11 @@
     const me = s.turn, foe = E.other(me);
     const mine = s.pieces.filter((p) => p.color === me);
 
+    if (s.pending[me] > 0) {
+      const free = E.freePocketSquares(s, me);
+      if (free.length) { const f = free[Math.floor(Math.random() * free.length)]; return { type: 'place', x: f.x, y: f.y }; }
+    }
+
     for (const p of mine) if (E.canEvolve(p)) return { type: 'evolve', id: p.id, to: chooseEvolution(p) };
 
     const king = s.pieces.find((p) => p.color === foe && p.type === 'king');

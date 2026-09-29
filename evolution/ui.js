@@ -41,8 +41,10 @@
   const isHuman = (color) => mode === 'hot' || color === 'w';
   const myTurn = () => !state.winner && !aiBusy && isHuman(state.turn);
   const nameOf = (p) => E.TYPES[p.type].name;
-  function logReturns() {
-    for (const r of state.returned || []) log(`${SIDE[r.color][0]}: a captured piece returns to its pocket as a Pawn.`, 'evo');
+  const canPlace = () => myTurn() && state.pending[state.turn] > 0 && E.freePocketSquares(state, state.turn).length > 0;
+  function logPending() {
+    const n = state.pending[state.turn];
+    if (isHuman(state.turn) && n > 0) log(`${SIDE[state.turn][0]}: ${n} captured piece${n === 1 ? ' is' : 's are'} waiting. Click a free square in your pocket to place a Pawn.`, 'evo');
   }
   function log(text, cls) { logLines.push({ t: text, c: cls || '' }); if (logLines.length > 200) logLines.shift(); }
 
@@ -117,6 +119,15 @@
         ctx.fillText(text, ox + (k.x + k.w / 2) * s, ly);
       }
     }
+    if (canPlace()) {
+      for (const f of E.freePocketSquares(state, state.turn)) {
+        tile(f.x, f.y, 'rgba(255,210,60,.45)');
+        if (s >= 10) {
+          ctx.fillStyle = '#5a4300'; ctx.font = `bold ${s * 0.6}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('+', ox + (f.x + 0.5) * s, oy + (f.y + 0.5) * s);
+        }
+      }
+    }
     if (state.last) { tile(state.last.from.x, state.last.from.y, 'rgba(240,200,60,.45)'); tile(state.last.to.x, state.last.to.y, 'rgba(240,200,60,.55)'); }
     if (sel) tile(sel.x, sel.y, 'rgba(70,140,255,.55)');
 
@@ -162,6 +173,12 @@
       ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(px + s * 0.15, py + s * 0.9, s * 0.7, Math.max(2, s * 0.06));
       ctx.fillStyle = '#ffd23f'; ctx.fillRect(px + s * 0.15, py + s * 0.9, s * 0.7 * Math.min(1, p.xp / e.need), Math.max(2, s * 0.06));
     }
+    if (p.recruit) {
+      ctx.setLineDash([Math.max(2, s * 0.1), Math.max(2, s * 0.08)]);
+      ctx.beginPath(); ctx.arc(cx, cy, s * 0.49, 0, 7);
+      ctx.strokeStyle = '#7a4fd0'; ctx.lineWidth = Math.max(1.5, s * 0.07); ctx.stroke();
+      ctx.setLineDash([]);
+    }
     if (E.canEvolve(p)) {
       const pulse = 0.5 + 0.5 * Math.sin(now / 250);
       ctx.beginPath(); ctx.arc(cx, cy, s * (0.47 + 0.05 * pulse), 0, 7);
@@ -203,7 +220,12 @@
     $('banner').textContent = state.winner === 'draw' ? 'Draw' : state.winner ? `${SIDE[state.winner]} wins!` : '';
 
     const info = $('info');
-    if (!sel) { info.innerHTML = '<span class="muted">Click a piece to see its moves and evolution path. Drag the board to pan, scroll to zoom.</span>'; }
+    if (!sel) {
+      const n = state.pending[state.turn];
+      info.innerHTML = canPlace()
+        ? `<b>${n} piece${n === 1 ? '' : 's'} waiting to return.</b><div class="muted">Click any glowing <b>+</b> square in your pocket to place a Pawn there. It cannot capture until it steps out of the pocket.</div>`
+        : '<span class="muted">Click a piece to see its moves and evolution path. Drag the board to pan, scroll to zoom.</span>';
+    }
     else {
       const p = sel, e = E.EVOLVE[p.type], T = E.TYPES[p.type];
       let h = `<div class="name">${SIDE[p.color]} ${T.name}</div>`;
@@ -215,6 +237,7 @@
           h += '<div class="evolves">' + e.to.map((k) => `<button type="button" data-evo="${k}">Evolve → ${E.TYPES[k].name}</button>`).join('') + '</div>';
         }
       } else h += '<div class="muted">Kings do not evolve. Protect yours!</div>';
+      if (p.recruit) h += '<div class="muted"><b>Recruit:</b> just returned. It cannot capture or threaten anything until it steps out of the pocket.</div>';
       if (p.acted && p.color === state.turn) h += '<div class="muted">Already acted this turn.</div>';
       info.innerHTML = h;
       info.querySelectorAll('[data-evo]').forEach((b) => b.addEventListener('click', () => doEvolve(p, b.dataset.evo)));
@@ -236,7 +259,7 @@
   function afterAction(prevTurn) {
     if (state.turn !== prevTurn && !state.winner) {
       log(`— ${SIDE[state.turn]}'s turn —`, 'turn');
-      logReturns();
+      logPending();
       if (mode === 'hot') goHome();
     }
     if (state.winner) log(state.winner === 'draw' ? 'Draw.' : `${SIDE[state.winner]} wins!`, 'evo');
@@ -257,6 +280,14 @@
     sel = null; targets = [];
     if (state.turn === r.color && E.canEvolve(p)) sel = p; // keep it selected so the Evolve buttons show
     afterAction(prev);
+  }
+
+  function doPlace(x, y) {
+    const r = E.place(state, x, y);
+    if (!r) return;
+    log(`${SIDE[r.color][0]}: a captured piece returns as a Pawn at ${label(x, y)} (Recruit).`, 'evo');
+    sel = null; targets = [];
+    refresh();
   }
 
   function doEvolve(p, to) {
@@ -284,8 +315,13 @@
       if (a.type === 'end') {
         E.endTurn(state);
         log(`— ${SIDE[state.turn]}'s turn —`, 'turn');
-        logReturns();
+        logPending();
         aiBusy = false; refresh(); return;
+      }
+      if (a.type === 'place') {
+        const r = E.place(state, a.x, a.y);
+        if (r) log(`B: a captured piece returns as a Pawn at ${label(a.x, a.y)} (Recruit).`, 'evo');
+        refresh(); setTimeout(step, 250); return;
       }
       if (a.type === 'evolve') {
         const r = E.evolve(state, a.id, a.to);
@@ -300,7 +336,7 @@
         if (r.xp) txt += ` (+${r.xp} XP)`;
         log(txt, (r.captured ? 'cap ' : '') + 'b');
         ensureVisible(a.x, a.y);
-        if (state.turn !== turnBefore && !state.winner) { log(`— ${SIDE[state.turn]}'s turn —`, 'turn'); logReturns(); }
+        if (state.turn !== turnBefore && !state.winner) { log(`— ${SIDE[state.turn]}'s turn —`, 'turn'); logPending(); }
         if (state.winner) log(state.winner === 'draw' ? 'Draw.' : `${SIDE[state.winner]} wins!`, 'evo');
       }
       if (state.winner || state.turn !== 'b') aiBusy = false;
@@ -366,6 +402,7 @@
     if (!E.inside(state, x, y)) { select(null); return; }
     const p = E.pieceAt(state, x, y);
     if (sel && myTurn() && targets.some((t) => t.x === x && t.y === y)) { doMove(sel, x, y); return; }
+    if (!p && canPlace() && E.inPocket(state, state.turn, x, y)) { doPlace(x, y); return; }
     select(p && p !== sel ? p : null);
   }
 

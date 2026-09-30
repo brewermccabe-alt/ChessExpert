@@ -265,9 +265,12 @@
     $('elo').value = String(botElo);
     $('elo-line').innerHTML = `Computer strength: <b>ELO ${botElo}</b> · ${AI.tierName(botElo)}`;
     $('elo').disabled = mode !== 'ai';
-    $('elo-note').textContent = mode === 'ai'
-      ? 'Changes apply from the computer\'s next move. This is a guide to relative strength, not a real rating.'
-      : 'Only used in games against the computer.';
+    const bigBoard = state && state.size > 8;
+    $('elo-note').textContent = mode !== 'ai'
+      ? 'Only used in games against the computer.'
+      : bigBoard && botElo > AI.TOP_HEURISTIC_ELO
+        ? `On the big boards the computer plays at ${AI.TOP_HEURISTIC_ELO} at most: the deeper search above that is for the 8×8 board.`
+        : 'Changes apply from the computer\'s next move. This is a guide to relative strength, not a real rating.';
   }
   function renderPanel() {
     const t = $('turn'), a = $('actions');

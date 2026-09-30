@@ -635,13 +635,29 @@ function playGame(whiteElo, blackElo, seed, size, cap) {
   assert.ok(AI.MAX_ELO > AI.MIN_ELO && AI.DEFAULT_ELO >= AI.MIN_ELO && AI.DEFAULT_ELO <= AI.MAX_ELO);
   assert.strictEqual(AI.paramsFor(AI.MIN_ELO).blunder, 1, 'the lowest setting plays at random');
   let prev = AI.paramsFor(AI.MIN_ELO);
-  for (let elo = AI.MIN_ELO + 100; elo <= AI.MAX_ELO; elo += 100) {
+  for (let elo = AI.MIN_ELO + 100; elo <= AI.TOP_HEURISTIC_ELO; elo += 100) {
     const p = AI.paramsFor(elo);
     assert.ok(p.noise <= prev.noise && p.blunder <= prev.blunder && p.skill >= prev.skill, `settings never get weaker (${elo})`);
     assert.ok(p.skill > prev.skill, `each 100 points is a real step (${elo})`);
     assert.ok(!prev.lookahead || p.lookahead, 'foresight is never lost going up');
     prev = p;
   }
+  // Above 1500 strength comes from the search: a blend of the two levels either side, and every step goes further up
+  let rank = -1;
+  for (let elo = AI.TOP_HEURISTIC_ELO + 100; elo <= AI.MAX_ELO; elo += 100) {
+    const plan = AI.planFor(elo);
+    assert.ok(plan.upper && plan.pUpper > 0 && plan.pUpper <= 1, `a search level is in play at ${elo}`);
+    const idx = AI.SEARCH_LEVELS.indexOf(plan.upper), r = idx + plan.pUpper;
+    assert.ok(r > rank, `each 100 points above 1500 is a real step (${elo})`);
+    assert.ok(!plan.lower || AI.SEARCH_LEVELS.indexOf(plan.lower) === idx - 1);
+    rank = r;
+  }
+  assert.deepStrictEqual(AI.planFor(AI.MAX_ELO).upper, AI.SEARCH_LEVELS[AI.SEARCH_LEVELS.length - 1]);
+  assert.strictEqual(AI.planFor(AI.MAX_ELO).pUpper, 1, 'the top setting is always the deepest search');
+  assert.strictEqual(AI.planFor(AI.TOP_HEURISTIC_ELO).upper, null, 'up to 1500 the heuristic bot plays');
+  assert.ok(AI.SEARCH_LEVELS.every((l, i) => i === 0 || (l.elo > AI.SEARCH_LEVELS[i - 1].elo && l.depth >= AI.SEARCH_LEVELS[i - 1].depth)), 'deeper searches sit higher');
+  // on the big boards the search is not used: the top of the heuristic range applies
+  assert.deepStrictEqual(AI.paramsFor(AI.MAX_ELO).skill, AI.paramsFor(AI.TOP_HEURISTIC_ELO).skill);
   assert.ok(!AI.paramsFor(AI.MIN_ELO).lookahead && AI.paramsFor(AI.MAX_ELO).lookahead && AI.paramsFor(AI.MAX_ELO).exchanges);
   assert.deepStrictEqual(AI.paramsFor(99999), AI.paramsFor(AI.MAX_ELO), 'out-of-range values are clamped');
   assert.deepStrictEqual(AI.paramsFor(-5), AI.paramsFor(AI.MIN_ELO));
@@ -654,16 +670,20 @@ function playGame(whiteElo, blackElo, seed, size, cap) {
 
   // Every setting plays only legal actions, on every board, and never passes when it can act
   for (const size of [8, 24]) {
-    for (const [w, b] of [[AI.MIN_ELO, AI.MAX_ELO], [AI.MAX_ELO, AI.MIN_ELO], [AI.DEFAULT_ELO, AI.DEFAULT_ELO]]) playGame(w, b, 11 + size, size, 120);
+    for (const [w, b] of [[AI.MIN_ELO, 2000], [2000, AI.MIN_ELO], [AI.DEFAULT_ELO, AI.DEFAULT_ELO]]) playGame(w, b, 11 + size, size, 120);
   }
+  playGame(AI.MAX_ELO, AI.MIN_ELO, 5, 8, 14);   // the deepest search only plays legal actions (short game: it is slow)
+  playGame(1800, 1900, 6, 8, 40);               // and so do the blended settings
 
   // A stronger setting really is stronger (seeded games, colours alternate)
   const score = (hi, lo, n) => { let pts = 0; for (let i = 0; i < n; i++) { const hiWhite = i % 2 === 0; const st = hiWhite ? playGame(hi, lo, 300 + i) : playGame(lo, hi, 300 + i); if (!st.winner || st.winner === 'draw') pts += 0.5; else if ((st.winner === 'w') === hiWhite) pts += 1; } return pts / n; };
   const t0 = Date.now();
-  const topVsRandom = score(AI.MAX_ELO, AI.MIN_ELO, 10);
-  const topVsMid = score(AI.MAX_ELO, 800, 10);
+  const topVsRandom = score(1500, AI.MIN_ELO, 10);
+  const topVsMid = score(1500, 800, 10);
   const midVsRandom = score(1100, AI.MIN_ELO, 10);
-  console.log(`strength: top vs 400 ${topVsRandom}, top vs 800 ${topVsMid}, 1100 vs 400 ${midVsRandom} (${Date.now() - t0}ms)`);
+  const searchVsTop = score(2000, 1500, 6);
+  console.log(`strength: 1500 vs 400 ${topVsRandom}, 1500 vs 800 ${topVsMid}, 1100 vs 400 ${midVsRandom}, 2000 vs 1500 ${searchVsTop} (${Date.now() - t0}ms)`);
+  assert.ok(searchVsTop >= 0.8, 'the searching levels beat the old top setting');
   assert.ok(topVsRandom >= 0.9, 'the top setting crushes the random one');
   assert.ok(topVsMid >= 0.7, 'the top setting beats a beginner-level one');
   assert.ok(midVsRandom >= 0.8, 'a middle setting beats random play');
@@ -672,6 +692,82 @@ function playGame(whiteElo, blackElo, seed, size, cap) {
   const tt = Date.now();
   AI.chooseAction(E.newGame(8), { elo: AI.MAX_ELO, rng: mulberry32(1) });
   assert.ok(Date.now() - tt < 3000, 'a full-strength move takes well under 3 seconds');
+}
+
+// ---------- the searching bot (8x8) ----------
+{
+  const sqn = (name) => [name.charCodeAt(0) - 97, 8 - parseInt(name[1], 10)];
+  const setup = (list, turn) => { let id = 1; const pieces = list.map(([type, color, name, lvl]) => { const [x, y] = sqn(name); return [id++, type, color, x, y, lvl || 0, 0, 0, 0, 1]; });
+    return E.fromJSON({ size: 8, turn: turn || 'w', actionsLeft: 1, turnNo: 5, winner: null, nextId: id, last: null, pending: { w: [], b: [] }, bank: { w: 0, b: 0 }, pieces }); };
+  const dest = (a) => String.fromCharCode(97 + a.x) + (8 - a.y);
+  const rng0 = () => 0.5;
+  const search = (st, depth) => AI.searchBest(st, { depth, nodes: 300000 }, rng0);
+
+  let st = setup([['king', 'w', 'g1'], ['pawn', 'w', 'f2'], ['pawn', 'w', 'g2'], ['pawn', 'w', 'h2'], ['king', 'b', 'g8'], ['rook', 'b', 'a8']], 'b');
+  assert.strictEqual(dest(search(st, 2)), 'a1', 'finds the back-rank mate in one');
+  st = setup([['king', 'w', 'e1'], ['knight', 'w', 'c3'], ['king', 'b', 'e8'], ['queen', 'b', 'd5']]);
+  assert.strictEqual(dest(search(st, 2)), 'd5', 'takes a free queen');
+  st = setup([['king', 'w', 'e1'], ['pawn', 'w', 'a7'], ['king', 'b', 'h5']]);
+  assert.strictEqual(dest(search(st, 2)), 'a8', 'promotes');
+  st = setup([['king', 'w', 'f7'], ['queen', 'w', 'g5'], ['king', 'b', 'h8']]);
+  assert.notStrictEqual(dest(search(st, 2)), 'g6', 'does not stalemate when it is winning');
+  st = setup([['king', 'w', 'h1'], ['rook', 'w', 'a1'], ['rook', 'w', 'b1'], ['king', 'b', 'e8']]);
+  const ladder = search(st, 4);
+  assert.ok(st.pieces.find((p) => p.id === ladder.id).type === 'rook' && (dest(ladder) === 'a7' || dest(ladder) === 'b7'), 'finds the rook-ladder mate in two');
+  st = setup([['king', 'w', 'e1'], ['pawn', 'w', 'd5', 3], ['king', 'b', 'e8'], ['queen', 'b', 'e6']]);
+  assert.strictEqual(dest(search(st, 2)), 'e6', 'takes the queen with the halo pawn (by shot or move)');
+  { // fool's mate from the real starting position
+    const g = E.newGame(8), go = (f, t) => assert.ok(E.move(g, E.pieceAt(g, ...sqn(f)).id, ...sqn(t)));
+    go('f2', 'f3'); go('e7', 'e5'); go('g2', 'g4');
+    assert.strictEqual(dest(search(g, 2)), 'h4', "plays Qh4# in the fool's mate");
+  }
+  { // far ahead in material, it must still see and play the mate in one (the "stand pat" shortcut must not hide it)
+    for (let seed = 1; seed <= 16; seed++) {      // it breaks ties at random, so try many seeds: every choice must be mate
+      const g = setup([['king', 'w', 'a3'], ['queen', 'w', 'b2'], ['queen', 'w', 'g1'], ['king', 'b', 'h8']]);
+      const a = AI.searchBest(g, { depth: 2, nodes: 300000 }, mulberry32(seed));
+      assert.ok(E.move(g, a.id, a.x, a.y), 'legal');
+      assert.strictEqual(g.result, 'checkmate', `the move it chose is checkmate (seed ${seed})`);
+    }
+    const g2 = setup([['king', 'w', 'a3'], ['queen', 'w', 'b2'], ['queen', 'w', 'g1'], ['rook', 'w', 'a1'], ['bishop', 'w', 'c1'], ['king', 'b', 'h8']]);
+    const a2 = AI.searchBest(g2, { depth: 3, nodes: 300000 }, mulberry32(9));
+    assert.ok(E.move(g2, a2.id, a2.x, a2.y) && g2.result === 'checkmate', 'still finds mate with even more material');
+  }
+  // A searching bot sees that a defended pawn is not free: it must not lose its queen for a pawn
+  st = setup([['king', 'w', 'g1'], ['queen', 'w', 'd1'], ['king', 'b', 'g8'], ['pawn', 'b', 'd6'], ['pawn', 'b', 'e7'], ['pawn', 'b', 'f7']]);
+  const qm = search(st, 3);
+  assert.ok(!(dest(qm) === 'd6' && st.pieces.find((p) => p.id === qm.id).type === 'queen'), 'does not take a defended pawn with the queen');
+
+  // Searching leaves the position exactly as it found it, and is repeatable
+  const fresh = E.newGame(8);
+  const before = JSON.stringify(E.toJSON(fresh));
+  const a1 = AI.searchBest(fresh, { depth: 3, nodes: 50000 }, mulberry32(3));
+  assert.strictEqual(JSON.stringify(E.toJSON(fresh)), before, 'the board is untouched after a search');
+  const a2 = AI.searchBest(E.newGame(8), { depth: 3, nodes: 50000 }, mulberry32(3));
+  assert.deepStrictEqual(a1, a2, 'same seed, same choice');
+  // and a tiny node budget still gives a sensible answer (or none), never a crash
+  const tiny = AI.searchBest(E.newGame(8), { depth: 6, nodes: 30 }, mulberry32(1));
+  assert.ok(tiny === null || ['move', 'place', 'shoot'].includes(tiny.type));
+
+  // Only legal actions, including against the heuristic bot, and it never passes when it can act
+  const mixed = (searchLevel, seed, cap) => {
+    const g = E.newGame(8), rng = mulberry32(seed);
+    let guard = 0;
+    while (!g.winner && g.turnNo < cap && guard++ < 5000) {
+      const a = g.turn === 'w' ? AI.chooseAction(g, { search: searchLevel, rng }) : AI.chooseAction(g, { skill: 0.6, rng });
+      applyAction(g, a);
+    }
+    return g;
+  };
+  mixed({ depth: 3, nodes: 20000 }, 21, 80);
+  mixed({ depth: 2, nodes: 5000 }, 22, 80);
+  // The searching bot beats the heuristic bot at its best
+  const searchScore = (level, n) => { let pts = 0; for (let i = 0; i < n; i++) { const searchWhite = i % 2 === 0, g = E.newGame(8), rng = mulberry32(700 + i); let guard = 0;
+    while (!g.winner && g.turnNo < 200 && guard++ < 5000) { const searchTurn = (g.turn === 'w') === searchWhite; applyAction(g, AI.chooseAction(g, searchTurn ? { search: level, rng } : { skill: 0.693, rng })); }
+    if (!g.winner || g.winner === 'draw') pts += 0.5; else if ((g.winner === 'w') === searchWhite) pts += 1; } return pts / n; };
+  const tS = Date.now();
+  const sc = searchScore({ depth: 2, nodes: 20000 }, 8);
+  console.log(`search (depth 2) vs the heuristic bot at its best: ${sc} (${Date.now() - tS}ms)`);
+  assert.ok(sc >= 0.75, 'a depth-2 search beats the heuristic bot');
 }
 
 // ---------- AI self-play: never throws, never makes an illegal action ----------

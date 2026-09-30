@@ -66,7 +66,7 @@ A separate, playable chess variant in [`evolution/`](evolution/index.html) (open
 - **Home base:** a captured piece returns to its pocket, on a square you choose, as the same kind of piece with no upgrades. A Knight's Extra life brings it back at once with its upgrades.
 - **8×8 plays like real chess:** one action per turn, and the full rules of **check, checkmate, stalemate, castling, en passant and pawn promotion** (no repetition rule), applying to upgraded pieces too.
 - **Big boards:** multiple actions per turn (board width ÷ 8), each piece acting once, and **no check**: capture the enemy King to win.
-- Play the computer or a friend on one screen. The computer's strength is adjustable with an **ELO slider (400 to 1500)** that you can change at any time. The scale is the bot's own: 400 plays completely at random and each 100 points is a measured step (about a 64% score), calibrated by self-play. The numbers are not comparable to human or engine ratings. Pan, zoom, and a minimap keep the huge board manageable. The game autosaves.
+- Play the computer or a friend on one screen. The computer's strength is adjustable with an **ELO slider (400 to 2400)** that you can change at any time. The scale is the bot's own: 400 plays completely at random and each 100 points is a measured step, calibrated by self-play. Up to 1500 the computer relies on heuristics; above that, on the 8×8 board, it runs a real look-ahead search (up to four moves deep, with checkmate and stalemate detection). On the big boards it plays at 1500 at most. The numbers are not comparable to human or engine ratings.
 - The rules engine and AI live in `evolution/game.js` and `evolution/ai.js`; run `node evolution/test.js` to test them.
 
 ## Credits

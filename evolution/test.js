@@ -29,9 +29,56 @@ for (const size of E.SIZES) {
     const mine = s.pieces.filter((p) => p.color === color);
     assert.ok(mine.every((p) => p.x >= k.x && p.x < k.x + 8 && p.y >= k.y && p.y < k.y + 2 && p.lvl === 0), 'army starts in its pocket');
   }
-  assert.ok(E.inside(s, size / 2, 0) && E.inside(s, size / 2, s.h - 1));
-  assert.ok(!E.inside(s, 0, 0) && !E.inside(s, size - 1, s.h - 1), 'void beside the pockets');
-  assert.ok(E.inside(s, 0, 2) && E.inside(s, size - 1, size + 1), 'main board is fully playable');
+  if (size > 8) {
+    assert.ok(E.inside(s, size / 2, 0) && E.inside(s, size / 2, s.h - 1));
+    assert.ok(!E.inside(s, 0, 0) && !E.inside(s, size - 1, s.h - 1), 'void beside the pockets');
+    assert.ok(E.inside(s, 0, 2) && E.inside(s, size - 1, size + 1), 'main board is fully playable');
+  }
+}
+
+// ---------- classic 8x8: no extension, the home rows are the pocket ----------
+{
+  const c = E.newGame(8);
+  assert.strictEqual(c.h, 8);
+  assert.strictEqual(c.pad, 0);
+  assert.ok(E.inside(c, 0, 0) && E.inside(c, 7, 7) && !E.inside(c, 8, 0) && !E.inside(c, 0, 8));
+  const layout = [];
+  for (let y = 0; y < 8; y++) { let r = ''; for (let x = 0; x < 8; x++) { const p = E.pieceAt(c, x, y); r += p ? (p.color === 'w' ? p.type[0].toUpperCase() : p.type[0]) : '.'; } layout.push(r); }
+  assert.strictEqual(layout[1], 'pppppppp');
+  assert.strictEqual(layout[6], 'PPPPPPPP');
+  assert.deepStrictEqual(E.pocket(c, 'w'), { x: 0, y: 6, w: 8, h: 2 });
+  assert.deepStrictEqual(E.pocket(c, 'b'), { x: 0, y: 0, w: 8, h: 2 });
+  assert.strictEqual(c.actionsLeft, 1, 'one action per turn, as in normal chess');
+  // a pawn steps forward one or two from its home row, as in normal chess
+  const e2 = E.pieceAt(c, 4, 6);
+  assert.deepStrictEqual(E.moves(c, e2).map((m) => m.y).sort(), [4, 5]);
+  // a captured piece returns to the home rows (the pocket) of its owner
+  const cb = E.newGame(8);
+  const brook = E.pieceAt(cb, 0, 0);
+  cb.cells[0] = null; brook.y = 4; cb.cells[4 * 8 + 0] = brook;      // black rook on a5
+  const wp = E.pieceAt(cb, 0, 6);                                    // white a-pawn
+  cb.cells[6 * 8] = null; wp.y = 5; cb.cells[5 * 8] = wp;            // white pawn on a3
+  cb.turn = 'b';
+  assert.ok(E.move(cb, brook.id, 0, 5), 'rook takes the pawn');
+  assert.deepStrictEqual(cb.pending.w, ['pawn']);
+  assert.strictEqual(cb.turn, 'w', 'one action per turn: the capture ended Black\'s turn');
+  assert.ok(E.freePocketSquares(cb, 'w').some((f) => f.x === 0 && f.y === 6), 'home rows have a free square');
+  assert.ok(E.place(cb, 0, 6, 'pawn'), 'placed back on the home row');
+  assert.strictEqual(E.place(cb, 3, 3, 'pawn'), null, 'not outside the home rows');
+}
+
+// ---------- slide reach: unlimited on 8x8, capped at 8 on the huge boards ----------
+{
+  const c8 = E.fromJSON({ size: 8, turn: 'w', actionsLeft: 1, turnNo: 1, winner: null, nextId: 5, last: null, pending: { w: [], b: [] },
+    bank: { w: 0, b: 0 }, pieces: [[1, 'king', 'w', 4, 7, 0, 0, 0, 0], [2, 'king', 'b', 4, 0, 0, 0, 0, 0], [3, 'rook', 'w', 0, 4, 0, 0, 0, 0], [4, 'bishop', 'w', 1, 3, 0, 0, 0, 0]] });
+  const rk = E.moves(c8, E.pieceAt(c8, 0, 4));
+  assert.ok(rk.some((m) => m.x === 7 && m.y === 4), 'rook slides the full width of 8x8');
+  assert.ok(rk.some((m) => m.x === 0 && m.y === 0) && rk.some((m) => m.x === 0 && m.y === 7));
+  assert.ok(E.moves(c8, E.pieceAt(c8, 1, 3)).some((m) => m.x === 4 && m.y === 0), 'bishop slides the full diagonal');
+  const c40 = E.fromJSON({ size: 40, turn: 'w', actionsLeft: 5, turnNo: 1, winner: null, nextId: 5, last: null, pending: { w: [], b: [] },
+    bank: { w: 0, b: 0 }, pieces: [[1, 'king', 'w', 20, 43, 0, 0, 0, 0], [2, 'king', 'b', 20, 0, 0, 0, 0, 0], [3, 'rook', 'w', 2, 20, 0, 0, 0, 0]] });
+  const r40 = E.moves(c40, E.pieceAt(c40, 2, 20));
+  assert.ok(r40.some((m) => m.x === 10 && m.y === 20) && !r40.some((m) => m.x === 11 && m.y === 20), 'huge board still caps slides at 8');
 }
 
 // ---------- pawn basics, bank ----------
@@ -236,7 +283,7 @@ const copy = E.fromJSON(JSON.parse(JSON.stringify(E.toJSON(s))));
 assert.deepStrictEqual(E.toJSON(copy), E.toJSON(s));
 
 // ---------- AI self-play: never throws, never makes an illegal action ----------
-for (const size of [24, 40]) {
+for (const size of [8, 24, 40]) {
   s = E.newGame(size);
   let guard = 0;
   const t0 = Date.now();

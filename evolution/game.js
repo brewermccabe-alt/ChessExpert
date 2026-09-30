@@ -1,7 +1,7 @@
 /* Evolution Chess rules engine (no DOM; runs in the browser and in Node).
  *
- *  - Huge board (24, 40 or 64 squares wide). Each side starts with a classic 2x8 army in a 2x8 pocket attached to
- *    the edge of the board.
+ *  - Boards of 8 (classic), 24, 40 or 64 squares. Each side starts with a classic 2x8 army in a 2x8 pocket: attached to
+ *    the edge of the big boards, or simply its two home rows on the 8x8 board.
  *  - Several actions per turn; each piece may act once per turn. No check: capture the enemy King to win.
  *  - Each side has a bank of "chess money": +50 for a move, +150 for a capture. Spend it on a fixed upgrade path for
  *    each piece (a shop, no XP).
@@ -52,29 +52,31 @@
 
   const MOVE_PAY = 50;
   const CAPTURE_PAY = 150;
-  const SLIDE = 8; // longest slide on the huge board
+  const SLIDE = 8; // longest slide on the huge boards (the classic 8x8 board has no limit)
+  const reachOn = (s) => (s.size <= 8 ? s.size : SLIDE);
 
   const ORTHO = [[1, 0], [-1, 0], [0, 1], [0, -1]];
   const DIAG = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
   const ALL8 = ORTHO.concat(DIAG);
   const KNIGHT = [[1, 2], [2, 1], [-1, 2], [-2, 1], [1, -2], [2, -1], [-1, -2], [-2, -1]];
-  const SIZES = [24, 40, 64];
+  const SIZES = [8, 24, 40, 64];
 
   const other = (c) => (c === 'w' ? 'b' : 'w');
   const idx = (s, x, y) => y * s.size + x;
   /* Layout: the main board is size x size (grid rows POCKET_H .. size+POCKET_H-1). Above and below it, each side has a
    * 2x8 pocket attached as an extension of the board, centred on the board. Everything else outside is void. */
   const POCKET_H = 2;
+  const padFor = (size) => (size <= 8 ? 0 : POCKET_H); // the classic 8x8 board has no extension: its pockets are the home rows
   const inside = (s, x, y) => {
     if (x < 0 || y < 0 || x >= s.size || y >= s.h) return false;
-    if (y >= POCKET_H && y < s.size + POCKET_H) return true;
+    if (y >= s.pad && y < s.size + s.pad) return true;
     const x0 = s.size / 2 - 4;
     return x >= x0 && x < x0 + 8;
   };
   const pieceAt = (s, x, y) => (inside(s, x, y) ? s.cells[idx(s, x, y)] : null);
   const pawnDir = (color) => (color === 'w' ? -1 : 1); // White starts at the bottom and moves up
-  const pawnStartRow = (s, color) => (color === 'w' ? s.size + POCKET_H : 1);
-  const actionsFor = (size) => Math.max(3, Math.round(size / 8));
+  const pawnStartRow = (s, color) => (color === 'w' ? s.h - 2 : 1);
+  const actionsFor = (size) => (size <= 8 ? 1 : Math.max(3, Math.round(size / 8))); // classic 8x8: one action per turn
   const cheb = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 
   const hasUpgrade = (p, id) => {
@@ -87,8 +89,9 @@
 
   function newGame(size) {
     if (!SIZES.includes(size)) size = 40;
-    const h = size + 2 * POCKET_H;
-    const s = { size, h, cells: new Array(size * h).fill(null), pieces: [], turn: 'w', actionsLeft: actionsFor(size),
+    const pad = padFor(size);
+    const h = size + 2 * pad;
+    const s = { size, h, pad, cells: new Array(size * h).fill(null), pieces: [], turn: 'w', actionsLeft: actionsFor(size),
       turnNo: 1, winner: null, nextId: 1, last: null, pending: { w: [], b: [] }, bank: { w: 0, b: 0 } };
     // Classic 2x8 army, starting in each side's pocket.
     const back = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
@@ -106,7 +109,7 @@
 
   /* The 2x8 pocket of each side: {x, y, w, h}. It is the army's starting area and its home base. */
   function pocket(s, color) {
-    return { x: s.size / 2 - 4, y: color === 'w' ? s.size + POCKET_H : 0, w: 8, h: POCKET_H };
+    return { x: s.size / 2 - 4, y: color === 'w' ? s.h - 2 : 0, w: 8, h: POCKET_H };
   }
 
   const inPocket = (s, color, x, y) => {
@@ -140,6 +143,7 @@
   function moves(s, p) {
     if (p.frozen) return [];
     const out = [];
+    const REACH = reachOn(s);
     const at = (x, y) => { const t = pieceAt(s, x, y); return t === p ? null : t; };
     const push = (x, y) => {
       if (!inside(s, x, y) || (x === p.x && y === p.y)) return false;
@@ -197,18 +201,18 @@
           // After the knight move, slide diagonally from the landing square (only from empty squares).
           for (const [lx, ly] of knightSquares(hasUpgrade(p, 'extend'))) {
             if (!inside(s, lx, ly) || at(lx, ly)) continue;
-            for (const [dx, dy] of DIAG) for (let i = 1; i <= SLIDE; i++) if (!push(lx + dx * i, ly + dy * i)) break;
+            for (const [dx, dy] of DIAG) for (let i = 1; i <= REACH; i++) if (!push(lx + dx * i, ly + dy * i)) break;
           }
         }
         break;
       }
-      case 'bishop': slide(hasUpgrade(p, 'steroids') ? ALL8 : DIAG, SLIDE); break;
+      case 'bishop': slide(hasUpgrade(p, 'steroids') ? ALL8 : DIAG, REACH); break;
       case 'rook': {
-        slide(ORTHO, SLIDE);
+        slide(ORTHO, REACH);
         if (hasUpgrade(p, 'castle')) {
           // Capture the piece directly behind another piece, in a straight line.
           for (const [dx, dy] of ORTHO) {
-            for (let i = 1; i < SLIDE; i++) {
+            for (let i = 1; i < REACH; i++) {
               if (!inside(s, p.x + dx * i, p.y + dy * i)) break;
               if (!at(p.x + dx * i, p.y + dy * i)) continue;
               const behind = at(p.x + dx * (i + 1), p.y + dy * (i + 1));
@@ -220,7 +224,7 @@
         break;
       }
       case 'queen':
-        if (hasUpgrade(p, 'wings')) fly(ALL8, SLIDE); else slide(ALL8, SLIDE);
+        if (hasUpgrade(p, 'wings')) fly(ALL8, REACH); else slide(ALL8, REACH);
         if (hasUpgrade(p, 'horse')) jumps(false);
         break;
       case 'king': slide(ALL8, 1); break;
@@ -395,8 +399,9 @@
   }
 
   function fromJSON(j) {
-    const h = j.size + 2 * POCKET_H;
-    const s = { size: j.size, h, cells: new Array(j.size * h).fill(null), pieces: [], turn: j.turn, actionsLeft: j.actionsLeft,
+    const pad = padFor(j.size);
+    const h = j.size + 2 * pad;
+    const s = { size: j.size, h, pad, cells: new Array(j.size * h).fill(null), pieces: [], turn: j.turn, actionsLeft: j.actionsLeft,
       turnNo: j.turnNo, winner: j.winner, nextId: j.nextId, last: j.last,
       pending: { w: (j.pending && j.pending.w) || [], b: (j.pending && j.pending.b) || [] }, bank: j.bank || { w: 0, b: 0 } };
     if (!Array.isArray(s.pending.w) || !Array.isArray(s.pending.b)) throw new Error('bad save');

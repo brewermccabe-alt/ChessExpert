@@ -32,7 +32,8 @@
   /* ---------- helpers ---------- */
 
   const label = (x, y) => {
-    const T = E.POCKET_H;
+    if (state.size <= 8) return String.fromCharCode(97 + x) + (state.size - y); // chess notation on the 8x8 board
+    const T = state.pad;
     if (y < T) return `B pocket ${x + 1}`;
     if (y >= state.size + T) return `W pocket ${x + 1}`;
     return `${x + 1},${state.size + T - y}`;
@@ -70,11 +71,12 @@
   }
   function centerOn(x, y) { cam.x = x + 0.5; cam.y = y + 0.5; clampCam(); dirty = true; }
   function goHome() {
+    if (state.size <= 8) { fit(); return; } // the small board simply fills the screen
     cam.s = Math.min(34, Math.max(minScale(), Math.min(W, H) / 22));
     const color = mode === 'hot' ? state.turn : 'w';
     centerOn(state.size / 2, color === 'w' ? state.h - 10 : 9);
   }
-  function fit() { cam.s = minScale(); centerOn(state.size / 2 - 0.5, state.h / 2 - 0.5); }
+  function fit() { cam.s = minScale() * (state.size <= 8 ? 0.9 : 1); centerOn(state.size / 2 - 0.5, state.h / 2 - 0.5); }
   function ensureVisible(x, y) {
     const sx = (x + 0.5 - cam.x) * cam.s + W / 2, sy = (y + 0.5 - cam.y) * cam.s + H / 2;
     if (sx < 30 || sy < 30 || sx > W - 30 || sy > H - 30) centerOn(x, y);
@@ -93,7 +95,9 @@
   function draw() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = '#2b2a27'; ctx.fillRect(0, 0, W, H);
-    const N = state.size, GH = state.h, T = E.POCKET_H, s = cam.s;
+    const N = state.size, GH = state.h, T = state.pad, s = cam.s;
+    const wantMini = state.size > 8 ? '' : 'none'; // no minimap needed on the 8x8 board
+    if (mini.style.display !== wantMini) mini.style.display = wantMini;
     const ox = W / 2 - cam.x * s, oy = H / 2 - cam.y * s;
     const x0 = Math.max(0, Math.floor(-ox / s)), x1 = Math.min(N - 1, Math.ceil((W - ox) / s));
     const y0 = Math.max(0, Math.floor(-oy / s)), y1 = Math.min(GH - 1, Math.ceil((H - oy) / s));
@@ -113,7 +117,13 @@
     }
     ctx.stroke();
     ctx.strokeStyle = '#000'; ctx.lineWidth = 3; ctx.strokeRect(ox, oy + T * s, N * s, N * s);
-    if (s >= 16) {
+    if (N <= 8) { // files a-h along the bottom, ranks 1-8 up the side
+      ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.font = `bold ${Math.max(10, s * 0.17)}px system-ui`;
+      ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+      for (let x = 0; x < N; x++) ctx.fillText(String.fromCharCode(97 + x), ox + (x + 1) * s - 4, oy + (T + N) * s - 3);
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      for (let y = 0; y < N; y++) ctx.fillText(String(N - y), ox + 4, oy + (T + y) * s + 3);
+    } else if (s >= 16) {
       ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.font = '10px system-ui'; ctx.textBaseline = 'top'; ctx.textAlign = 'left';
       for (let x = x0; x <= x1; x++) if (x % 8 === 0) ctx.fillText(String(x + 1), ox + x * s + 2, oy + T * s + 2);
       for (let y = Math.max(y0, T); y <= Math.min(y1, N + T - 1); y++) if ((y - T) % 8 === 0) ctx.fillText(String(N - (y - T)), Math.max(ox, 0) + 2, oy + y * s + 2 + (y === T ? 10 : 0));
@@ -123,6 +133,10 @@
     // Each side's pocket is an extension of the board: outlined and labelled, with pieces waiting to come back.
     for (const color of ['w', 'b']) {
       const k = E.pocket(state, color);
+      if (state.pad === 0) { // on the 8x8 board the pocket is the two home rows: tint them
+        ctx.fillStyle = color === 'w' ? 'rgba(217,189,106,.28)' : 'rgba(110,130,180,.28)';
+        ctx.fillRect(ox + k.x * s, oy + k.y * s, k.w * s, k.h * s);
+      }
       ctx.strokeStyle = color === 'w' ? '#8a6d16' : '#3d4c6b'; ctx.lineWidth = Math.max(2, s * 0.09);
       ctx.strokeRect(ox + k.x * s, oy + k.y * s, k.w * s, k.h * s);
       if (s >= 12) {
@@ -210,7 +224,7 @@
   }
 
   function drawMini() {
-    const m = mini.width, N = state.size, T = E.POCKET_H, k = m / state.h, offX = (m - N * k) / 2;
+    const m = mini.width, N = state.size, T = state.pad, k = m / state.h, offX = (m - N * k) / 2;
     mctx.fillStyle = '#1b1c1b'; mctx.fillRect(0, 0, m, m);
     mctx.fillStyle = '#2f3a30'; mctx.fillRect(offX, T * k, N * k, N * k);
     for (const p of state.pieces) {
@@ -500,12 +514,13 @@
     mode = m; aiBusy = false; sel = null; targets = []; fireMode = false; placeKind = null;
     state = E.newGame(size);
     logLines = [];
-    log(`New game: ${size}×${size}, ${E.actionsFor(size)} actions per turn.`, 'turn');
+    const n = E.actionsFor(size);
+    log(`New game: ${size}×${size}, ${n} action${n === 1 ? '' : 's'} per turn.`, 'turn');
     resize(); goHome(); refresh();
   }
 
   if (load()) { $('size').value = String(state.size); $('mode').value = mode; resize(); goHome(); renderPanel(); }
-  else start(40, 'ai');
+  else start(8, 'ai');
   if (!state.winner && mode === 'ai' && state.turn === 'b') runAI();
   requestAnimationFrame(loop);
   const status = $('status'); if (status && status.className !== 'err') status.hidden = true;

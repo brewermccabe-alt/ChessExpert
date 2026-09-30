@@ -58,9 +58,9 @@ Puzzle ids come from the position and first move, so rebuilding keeps each playe
 
 ## Evolution Chess (variant)
 
-A separate, playable chess variant in [`evolution/`](evolution/index.html) (open `evolution/index.html`, no build step), on a vast 24, 40 or 64 square board:
+A separate, playable chess variant in [`evolution/`](evolution/index.html) (open `evolution/index.html`, no build step), on a classic 8×8 board (one action per turn, no slide limits) or a vast 24, 40 or 64 square board:
 
-- **Pockets:** each side starts with a classic 2×8 army (pawns plus R N B Q K B N R) in a 2×8 pocket attached to the edge of the board, leaving a huge empty middle to cross.
+- **Pockets:** each side starts with a classic 2×8 army (pawns plus R N B Q K B N R) in a 2×8 pocket. On the big boards the pocket is attached to the edge of the board, leaving a huge empty middle to cross; on 8×8 it is simply your two home rows.
 - **Money and upgrades:** every move earns $50 and every capture $150. Spend it in the side-panel shop on each piece's fixed upgrade path: Pawn (jet engine, sword, halo), Knight (extra life, extending potion, bow, bishop's mage), Bishop (freeze potion, steroids), Rook (cannon, castle), Queen (katana, horse's head, wings), King (long arm).
 - **Firing:** some upgrades capture without moving the piece (a 🎯 button appears).
 - **Home base:** a captured piece returns to its pocket, on a square you choose, as the same kind of piece with no upgrades. A Knight's Extra life brings it back at once with its upgrades.

@@ -11,20 +11,21 @@
   const EMOJI_FONT = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
   const SIDE = { w: 'White', b: 'Black' };
 
-  let state, mode = 'ai', sel = null, targets = [], logLines = [], aiBusy = false, dirty = true, fireMode = false, placeKind = null, promo = null;
+  let state, mode = 'ai', sel = null, targets = [], logLines = [], aiBusy = false, dirty = true, fireMode = false, placeKind = null, promo = null, botElo = AI.DEFAULT_ELO;
   const cam = { x: 0, y: 0, s: 24 };
   let W = 0, H = 0, dpr = 1;
 
   /* ---------- persistence ---------- */
 
   function save() {
-    try { localStorage.setItem(SAVE_KEY, JSON.stringify({ mode, game: E.toJSON(state), log: logLines.slice(-60) })); } catch (e) { /* storage blocked */ }
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify({ mode, elo: botElo, game: E.toJSON(state), log: logLines.slice(-60) })); } catch (e) { /* storage blocked */ }
   }
   function load() {
     try {
       const j = JSON.parse(localStorage.getItem(SAVE_KEY));
       if (!j) return false;
       state = E.fromJSON(j.game); mode = j.mode === 'hot' ? 'hot' : 'ai'; logLines = Array.isArray(j.log) ? j.log : [];
+      if (Number.isFinite(j.elo)) botElo = Math.min(AI.MAX_ELO, Math.max(AI.MIN_ELO, j.elo));
       return true;
     } catch (e) { return false; }
   }
@@ -260,6 +261,14 @@
   /* ---------- panel ---------- */
 
   const money = (n) => '$' + n;
+  function renderElo() {
+    $('elo').value = String(botElo);
+    $('elo-line').innerHTML = `Computer strength: <b>ELO ${botElo}</b> · ${AI.tierName(botElo)}`;
+    $('elo').disabled = mode !== 'ai';
+    $('elo-note').textContent = mode === 'ai'
+      ? 'Changes apply from the computer\'s next move. This is a guide to relative strength, not a real rating.'
+      : 'Only used in games against the computer.';
+  }
   function renderPanel() {
     const t = $('turn'), a = $('actions');
     if (state.winner === 'draw') { t.textContent = state.result === 'stalemate' ? 'Stalemate — draw' : 'Draw — no legal moves'; a.textContent = state.result === 'stalemate' ? 'No legal move, and the King is not in check.' : ''; }
@@ -268,6 +277,7 @@
       t.textContent = `${SIDE[state.turn]} to move` + (state.check ? ' — CHECK!' : '') + (aiBusy ? ' (thinking…)' : '');
       a.textContent = `${state.actionsLeft} action${state.actionsLeft === 1 ? '' : 's'} left · turn ${Math.ceil(state.turnNo / 2)}`;
     }
+    renderElo();
     $('bank').innerHTML = `Bank: White <b>${money(state.bank.w)}</b> · Black <b>${money(state.bank.b)}</b>`;
     $('end').disabled = !myTurn() || !E.canPass(state);
     $('end').title = state.chess && myTurn() && !E.canPass(state) ? 'You must make a move' : '';
@@ -399,7 +409,7 @@
     aiBusy = true; renderPanel();
     const step = () => {
       if (state.winner || state.turn !== 'b') { aiBusy = false; refresh(); return; }
-      const a = AI.chooseAction(state);
+      const a = AI.chooseAction(state, { elo: botElo });
       const turnBefore = state.turn;
       if (a.type === 'buy') {
         const r = E.buy(state, a.id);
@@ -501,6 +511,8 @@
 
   /* ---------- wiring ---------- */
 
+  $('elo').min = String(AI.MIN_ELO); $('elo').max = String(AI.MAX_ELO);
+  $('elo').addEventListener('input', () => { botElo = parseInt($('elo').value, 10); renderElo(); save(); });
   $('end').addEventListener('click', endTurn);
   $('zin').addEventListener('click', () => zoomAt(1.4, W / 2, H / 2));
   $('zout').addEventListener('click', () => zoomAt(1 / 1.4, W / 2, H / 2));

@@ -77,3 +77,8 @@ button.fire.on { background: #7a3510; border-color: #7a3510; }
 .evolves button.on { outline: 2px solid var(--ink); }
 #upgrade-list { padding-left: 16px; }
 .up.queued { background: rgba(217,165,32,.14); border-radius: 6px; }
+.bot label { display: block; color: var(--muted); margin-bottom: 4px; }
+.bot label b { color: var(--ink); }
+.bot input[type=range] { width: 100%; }
+.small { font-size: 12px; }
+.bot .muted { color: var(--muted); }

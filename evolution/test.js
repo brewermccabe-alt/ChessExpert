@@ -614,6 +614,66 @@ s.pieces[0].lvl = 1; s.pieces[0].frozen = true; s.pieces[0].lifeSpent = true;
 const copy = E.fromJSON(JSON.parse(JSON.stringify(E.toJSON(s))));
 assert.deepStrictEqual(E.toJSON(copy), E.toJSON(s));
 
+// ---------- computer strength (ELO) ----------
+function mulberry32(seed) { return () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let x = Math.imul(seed ^ (seed >>> 15), 1 | seed); x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x; return ((x ^ (x >>> 14)) >>> 0) / 4294967296; }; }
+function applyAction(st, a) {
+  if (a.type === 'end') { if (st.chess) assert.ok(E.canPass(st), 'the bot passed while it had a legal action'); E.endTurn(st); }
+  else if (a.type === 'place') assert.ok(E.place(st, a.x, a.y, a.kind), 'illegal placement');
+  else if (a.type === 'buy') assert.ok(E.buy(st, a.id), 'illegal purchase');
+  else if (a.type === 'shoot') assert.ok(E.shoot(st, a.id, a.x, a.y), 'illegal shot');
+  else assert.ok(E.move(st, a.id, a.x, a.y, a.promo), 'illegal move');
+}
+function playGame(whiteElo, blackElo, seed, size, cap) {
+  const st = E.newGame(size || 8), rng = mulberry32(seed);
+  let guard = 0;
+  while (!st.winner && st.turnNo < (cap || 240) && guard++ < 50000) applyAction(st, AI.chooseAction(st, { elo: st.turn === 'w' ? whiteElo : blackElo, rng }));
+  return st;
+}
+{
+  // The settings form a proper scale: 400 is random play, the range is 400..1500, and every step is stronger
+  assert.strictEqual(AI.MIN_ELO, 400);
+  assert.ok(AI.MAX_ELO > AI.MIN_ELO && AI.DEFAULT_ELO >= AI.MIN_ELO && AI.DEFAULT_ELO <= AI.MAX_ELO);
+  assert.strictEqual(AI.paramsFor(AI.MIN_ELO).blunder, 1, 'the lowest setting plays at random');
+  let prev = AI.paramsFor(AI.MIN_ELO);
+  for (let elo = AI.MIN_ELO + 100; elo <= AI.MAX_ELO; elo += 100) {
+    const p = AI.paramsFor(elo);
+    assert.ok(p.noise <= prev.noise && p.blunder <= prev.blunder && p.skill >= prev.skill, `settings never get weaker (${elo})`);
+    assert.ok(p.skill > prev.skill, `each 100 points is a real step (${elo})`);
+    assert.ok(!prev.lookahead || p.lookahead, 'foresight is never lost going up');
+    prev = p;
+  }
+  assert.ok(!AI.paramsFor(AI.MIN_ELO).lookahead && AI.paramsFor(AI.MAX_ELO).lookahead && AI.paramsFor(AI.MAX_ELO).exchanges);
+  assert.deepStrictEqual(AI.paramsFor(99999), AI.paramsFor(AI.MAX_ELO), 'out-of-range values are clamped');
+  assert.deepStrictEqual(AI.paramsFor(-5), AI.paramsFor(AI.MIN_ELO));
+  assert.ok(AI.tierName(AI.MIN_ELO) && AI.tierName(AI.MAX_ELO) && AI.tierName(900));
+
+  // Deterministic for a given seed
+  const trace = (seed) => { const st = E.newGame(8), rng = mulberry32(seed), out = []; for (let i = 0; i < 40 && !st.winner; i++) { const a = AI.chooseAction(st, { elo: 1200, rng }); out.push(JSON.stringify(a)); applyAction(st, a); } return out.join('|'); };
+  assert.strictEqual(trace(7), trace(7), 'same seed, same play');
+  assert.notStrictEqual(trace(7), trace(8), 'different seed, different play');
+
+  // Every setting plays only legal actions, on every board, and never passes when it can act
+  for (const size of [8, 24]) {
+    for (const [w, b] of [[AI.MIN_ELO, AI.MAX_ELO], [AI.MAX_ELO, AI.MIN_ELO], [AI.DEFAULT_ELO, AI.DEFAULT_ELO]]) playGame(w, b, 11 + size, size, 120);
+  }
+
+  // A stronger setting really is stronger (seeded games, colours alternate)
+  const score = (hi, lo, n) => { let pts = 0; for (let i = 0; i < n; i++) { const hiWhite = i % 2 === 0; const st = hiWhite ? playGame(hi, lo, 300 + i) : playGame(lo, hi, 300 + i); if (!st.winner || st.winner === 'draw') pts += 0.5; else if ((st.winner === 'w') === hiWhite) pts += 1; } return pts / n; };
+  const t0 = Date.now();
+  const topVsRandom = score(AI.MAX_ELO, AI.MIN_ELO, 10);
+  const topVsMid = score(AI.MAX_ELO, 800, 10);
+  const midVsRandom = score(1100, AI.MIN_ELO, 10);
+  console.log(`strength: top vs 400 ${topVsRandom}, top vs 800 ${topVsMid}, 1100 vs 400 ${midVsRandom} (${Date.now() - t0}ms)`);
+  assert.ok(topVsRandom >= 0.9, 'the top setting crushes the random one');
+  assert.ok(topVsMid >= 0.7, 'the top setting beats a beginner-level one');
+  assert.ok(midVsRandom >= 0.8, 'a middle setting beats random play');
+
+  // It answers in reasonable time even at full strength
+  const tt = Date.now();
+  AI.chooseAction(E.newGame(8), { elo: AI.MAX_ELO, rng: mulberry32(1) });
+  assert.ok(Date.now() - tt < 3000, 'a full-strength move takes well under 3 seconds');
+}
+
 // ---------- AI self-play: never throws, never makes an illegal action ----------
 for (const size of [8, 24, 40]) {
   s = E.newGame(size);

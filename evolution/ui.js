@@ -5,14 +5,13 @@
   const $ = (id) => document.getElementById(id);
   const canvas = $('board'), ctx = canvas.getContext('2d');
   const mini = $('mini'), mctx = mini.getContext('2d');
-  const SAVE_KEY = 'evolution-chess-save-v4';
-  const GLYPH = { pawn: '♟', knight: '♞', bishop: '♝', rook: '♜', nightrider: '♞', queen: '♛', amazon: '♛', king: '♚' };
-  const BADGE = { nightrider: 'N', amazon: 'A' };
-  const TIER_COLOR = { pawn: '#9a9a9a', knight: '#c98b4a', bishop: '#c98b4a', rook: '#b8c2cc', nightrider: '#b8c2cc',
-    queen: '#e0b83a', amazon: '#b06bd6', king: '#d94f4f' };
+  const SAVE_KEY = 'evolution-chess-save-v5';
+  const GLYPH = { pawn: '♟', knight: '♞', bishop: '♝', rook: '♜', queen: '♛', king: '♚' };
+  const TIER_COLOR = { pawn: '#9a9a9a', knight: '#c98b4a', bishop: '#c98b4a', rook: '#b8c2cc', queen: '#e0b83a', king: '#d94f4f' };
+  const EMOJI_FONT = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
   const SIDE = { w: 'White', b: 'Black' };
 
-  let state, mode = 'ai', sel = null, targets = [], logLines = [], aiBusy = false, dirty = true;
+  let state, mode = 'ai', sel = null, targets = [], logLines = [], aiBusy = false, dirty = true, fireMode = false, placeKind = null;
   const cam = { x: 0, y: 0, s: 24 };
   let W = 0, H = 0, dpr = 1;
 
@@ -41,10 +40,25 @@
   const isHuman = (color) => mode === 'hot' || color === 'w';
   const myTurn = () => !state.winner && !aiBusy && isHuman(state.turn);
   const nameOf = (p) => E.TYPES[p.type].name;
-  const canPlace = () => myTurn() && state.pending[state.turn] > 0 && E.freePocketSquares(state, state.turn).length > 0;
+  const canPlace = () => myTurn() && state.pending[state.turn].length > 0 && E.freePocketSquares(state, state.turn).length > 0;
+  const affordable = (p) => {
+    if (state.winner || p.color !== state.turn || !isHuman(p.color) || aiBusy) return false;
+    const u = E.nextUpgrade(p);
+    return !!u && state.bank[p.color] >= u.cost;
+  };
   function logPending() {
-    const n = state.pending[state.turn];
-    if (isHuman(state.turn) && n > 0) log(`${SIDE[state.turn][0]}: ${n} captured piece${n === 1 ? ' is' : 's are'} waiting. Click a free square in your pocket to place a Pawn.`, 'evo');
+    const n = state.pending[state.turn].length;
+    if (isHuman(state.turn) && n > 0) log(`${SIDE[state.turn][0]}: ${n} captured piece${n === 1 ? ' is' : 's are'} waiting. Pick one and click a free square in your pocket.`, 'evo');
+    const f = state.pieces.filter((p) => p.color === state.turn && p.frozen).length;
+    if (f > 0) log(`${SIDE[state.turn][0]}: ${f} piece${f === 1 ? ' is' : 's are'} frozen this turn.`, 'evo');
+  }
+  function describeAction(r) {
+    const c = SIDE[r.color][0], name = E.TYPES[r.piece].name;
+    let t = r.shot ? `${c}: ${name} at ${label(r.from.x, r.from.y)} fires at ${label(r.to.x, r.to.y)}` : `${c}: ${name} ${label(r.from.x, r.from.y)} → ${label(r.to.x, r.to.y)}`;
+    if (r.captured) t += ` and takes ${E.TYPES[r.captured].name}`;
+    t += ` (+$${r.gain})`;
+    if (r.revived) t += ` — the Knight's extra life brings it back to its pocket`;
+    return t;
   }
   function log(text, cls) { logLines.push({ t: text, c: cls || '' }); if (logLines.length > 200) logLines.shift(); }
 
@@ -112,7 +126,7 @@
       ctx.strokeStyle = color === 'w' ? '#8a6d16' : '#3d4c6b'; ctx.lineWidth = Math.max(2, s * 0.09);
       ctx.strokeRect(ox + k.x * s, oy + k.y * s, k.w * s, k.h * s);
       if (s >= 12) {
-        const waiting = state.pending[color];
+        const waiting = state.pending[color].length;
         const text = `${color === 'w' ? "WHITE'S" : "BLACK'S"} POCKET` + (waiting ? ` · ${waiting} returning` : '');
         ctx.fillStyle = '#e8e2cf'; ctx.font = `bold ${Math.min(14, s * 0.4)}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         const ly = color === 'w' ? oy + (k.y + k.h + 0.5) * s : oy + (k.y - 0.5) * s;
@@ -139,7 +153,13 @@
     for (const t of targets) {
       const cx = ox + (t.x + 0.5) * s, cy = oy + (t.y + 0.5) * s;
       ctx.beginPath();
-      if (t.capture) { ctx.strokeStyle = 'rgba(220,50,40,.9)'; ctx.lineWidth = Math.max(2, s * 0.09); ctx.arc(cx, cy, s * 0.44, 0, 7); ctx.stroke(); }
+      if (t.shot) {
+        const r = s * 0.36;
+        ctx.strokeStyle = 'rgba(235,110,0,.95)'; ctx.lineWidth = Math.max(2, s * 0.08);
+        ctx.arc(cx, cy, r, 0, 7);
+        ctx.moveTo(cx - r * 1.4, cy); ctx.lineTo(cx + r * 1.4, cy); ctx.moveTo(cx, cy - r * 1.4); ctx.lineTo(cx, cy + r * 1.4);
+        ctx.stroke();
+      } else if (t.capture) { ctx.strokeStyle = 'rgba(220,50,40,.9)'; ctx.lineWidth = Math.max(2, s * 0.09); ctx.arc(cx, cy, s * 0.44, 0, 7); ctx.stroke(); }
       else { ctx.fillStyle = 'rgba(30,80,200,.55)'; ctx.arc(cx, cy, Math.max(2, s * 0.14), 0, 7); ctx.fill(); }
     }
     drawMini();
@@ -160,29 +180,31 @@
     ctx.lineWidth = Math.max(1, s * 0.05); ctx.strokeStyle = white ? '#fff' : '#111'; ctx.stroke();
     ctx.font = `${s * 0.68}px "Segoe UI Symbol","Noto Sans Symbols 2","DejaVu Sans",serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const g = GLYPH[p.type] + '︎';
+    const g = GLYPH[p.type] + '\uFE0E';
     ctx.lineWidth = Math.max(1, s * 0.06); ctx.strokeStyle = white ? '#111' : '#fff';
     ctx.strokeText(g, cx, cy + s * 0.03);
     ctx.fillStyle = white ? '#fff' : '#111'; ctx.fillText(g, cx, cy + s * 0.03);
-    if (BADGE[p.type] && s >= 16) {
-      ctx.font = `bold ${s * 0.26}px system-ui`; ctx.fillStyle = '#fff'; ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
-      ctx.strokeText(BADGE[p.type], px + s * 0.8, py + s * 0.2); ctx.fillText(BADGE[p.type], px + s * 0.8, py + s * 0.2);
+    const list = E.UPGRADES[p.type];
+    if (list && p.lvl > 0 && s >= 16) { // the latest upgrade, as a small icon in the corner
+      ctx.font = `${s * 0.34}px ${EMOJI_FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(list[p.lvl - 1].icon, px + s * 0.8, py + s * 0.2);
     }
-    const e = E.EVOLVE[p.type];
-    if (e && s >= 18) {
-      ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(px + s * 0.15, py + s * 0.9, s * 0.7, Math.max(2, s * 0.06));
-      ctx.fillStyle = '#ffd23f'; ctx.fillRect(px + s * 0.15, py + s * 0.9, s * 0.7 * Math.min(1, p.xp / e.need), Math.max(2, s * 0.06));
+    if (list && s >= 18) { // one pip per upgrade on this piece's path, gold when owned
+      const w = Math.min((s * 0.7) / list.length, s * 0.16), start = px + (s - w * list.length) / 2;
+      for (let i = 0; i < list.length; i++) {
+        ctx.fillStyle = i < p.lvl ? '#ffd23f' : 'rgba(0,0,0,.45)';
+        ctx.fillRect(start + i * w + 1, py + s * 0.9, w - 2, Math.max(2, s * 0.06));
+      }
     }
-    if (p.recruit) {
-      ctx.setLineDash([Math.max(2, s * 0.1), Math.max(2, s * 0.08)]);
-      ctx.beginPath(); ctx.arc(cx, cy, s * 0.49, 0, 7);
-      ctx.strokeStyle = '#7a4fd0'; ctx.lineWidth = Math.max(1.5, s * 0.07); ctx.stroke();
-      ctx.setLineDash([]);
+    if (p.frozen) {
+      ctx.beginPath(); ctx.arc(cx, cy, s * 0.45, 0, 7);
+      ctx.fillStyle = 'rgba(120,200,255,.5)'; ctx.fill();
+      if (s >= 16) { ctx.font = `${s * 0.36}px ${EMOJI_FONT}`; ctx.fillStyle = '#fff'; ctx.fillText('❄️', px + s * 0.2, py + s * 0.2); }
     }
-    if (E.canEvolve(p)) {
+    if (affordable(p)) {
       const pulse = 0.5 + 0.5 * Math.sin(now / 250);
       ctx.beginPath(); ctx.arc(cx, cy, s * (0.47 + 0.05 * pulse), 0, 7);
-      ctx.strokeStyle = `rgba(255,210,40,${0.6 + 0.4 * pulse})`; ctx.lineWidth = Math.max(2, s * 0.08); ctx.stroke();
+      ctx.strokeStyle = `rgba(255,210,40,${0.5 + 0.4 * pulse})`; ctx.lineWidth = Math.max(2, s * 0.07); ctx.stroke();
     }
     ctx.globalAlpha = 1;
   }
@@ -201,12 +223,13 @@
   }
 
   function loop() {
-    if (dirty || state.pieces.some((p) => p.color === state.turn && E.canEvolve(p))) { dirty = false; draw(); }
+    if (dirty || state.pieces.some(affordable)) { dirty = false; draw(); }
     requestAnimationFrame(loop);
   }
 
   /* ---------- panel ---------- */
 
+  const money = (n) => '$' + n;
   function renderPanel() {
     const t = $('turn'), a = $('actions');
     if (state.winner === 'draw') { t.textContent = 'Draw — no legal moves'; a.textContent = ''; }
@@ -215,32 +238,46 @@
       t.textContent = `${SIDE[state.turn]} to move` + (aiBusy ? ' (thinking…)' : '');
       a.textContent = `${state.actionsLeft} action${state.actionsLeft === 1 ? '' : 's'} left · turn ${Math.ceil(state.turnNo / 2)}`;
     }
+    $('bank').innerHTML = `Bank: White <b>${money(state.bank.w)}</b> · Black <b>${money(state.bank.b)}</b>`;
     $('end').disabled = !myTurn();
     $('banner').hidden = !state.winner;
     $('banner').textContent = state.winner === 'draw' ? 'Draw' : state.winner ? `${SIDE[state.winner]} wins!` : '';
 
     const info = $('info');
     if (!sel) {
-      const n = state.pending[state.turn];
-      info.innerHTML = canPlace()
-        ? `<b>${n} piece${n === 1 ? '' : 's'} waiting to return.</b><div class="muted">Click any glowing <b>+</b> square in your pocket to place a Pawn there. It cannot capture until it steps out of the pocket.</div>`
-        : '<span class="muted">Click a piece to see its moves and evolution path. Drag the board to pan, scroll to zoom.</span>';
-    }
-    else {
-      const p = sel, e = E.EVOLVE[p.type], T = E.TYPES[p.type];
+      if (canPlace()) {
+        const list = state.pending[state.turn], kinds = [...new Set(list)];
+        if (!kinds.includes(placeKind)) placeKind = kinds[0];
+        info.innerHTML = `<b>${list.length} piece${list.length === 1 ? '' : 's'} waiting to return.</b>` +
+          '<div class="muted">Pick one, then click a glowing <b>+</b> square in your pocket. It returns without its upgrades.</div>' +
+          '<div class="evolves">' + kinds.map((k) => `<button type="button" data-kind="${k}" class="${k === placeKind ? 'on' : ''}">${E.TYPES[k].name} ×${list.filter((q) => q === k).length}</button>`).join('') + '</div>';
+        info.querySelectorAll('[data-kind]').forEach((b) => b.addEventListener('click', () => { placeKind = b.dataset.kind; renderPanel(); }));
+      } else {
+        info.innerHTML = '<span class="muted">Click a piece to see its moves and upgrades. Moving earns $50 and capturing $150; spend it on upgrades. Drag the board to pan, scroll to zoom.</span>';
+      }
+    } else {
+      const p = sel, T = E.TYPES[p.type], list = E.UPGRADES[p.type] || [];
+      const mine = p.color === state.turn && myTurn();
       let h = `<div class="name">${SIDE[p.color]} ${T.name}</div>`;
-      h += `<div class="muted">Reach ${p.type === 'nightrider' ? '4 jumps' : T.range === 1 && p.type !== 'pawn' ? '1 square' : p.type === 'pawn' ? '1 square (captures diagonally)' : T.range + ' squares'}${p.type === 'amazon' ? ' + knight jump' : ''} · worth ${T.value >= 100 ? 'the game' : T.value + ' XP'}</div>`;
-      if (e) {
-        h += `<div class="bar"><i style="width:${Math.min(100, (p.xp / e.need) * 100)}%"></i></div>`;
-        h += `<div class="muted">XP ${p.xp} / ${e.need} → ${e.to.map((k) => E.TYPES[k].name).join(' or ')}</div>`;
-        if (E.canEvolve(p) && p.color === state.turn && myTurn()) {
-          h += '<div class="evolves">' + e.to.map((k) => `<button type="button" data-evo="${k}">Evolve → ${E.TYPES[k].name}</button>`).join('') + '</div>';
+      h += `<div class="muted">Level ${p.lvl} of ${list.length}</div>`;
+      if (p.frozen) h += '<div class="frozen">❄️ Frozen: cannot move or fire this turn.</div>';
+      h += '<div class="ups">' + list.map((u, i) => {
+        const cls = i < p.lvl ? 'owned' : i === p.lvl ? 'next' : 'locked';
+        let buy = '';
+        if (i === p.lvl && mine) {
+          const need = u.cost - state.bank[p.color];
+          buy = need <= 0 ? `<button type="button" data-buy class="buy">Buy for ${money(u.cost)}</button>` : `<div class="muted">Need ${money(need)} more</div>`;
         }
-      } else h += '<div class="muted">Kings do not evolve. Protect yours!</div>';
-      if (p.recruit) h += '<div class="muted"><b>Recruit:</b> just returned. It cannot capture or threaten anything until it steps out of the pocket.</div>';
+        return `<div class="up ${cls}"><span class="ico">${u.icon}</span><div><b>${u.name}</b> · ${money(u.cost)}<div class="muted">${u.desc}</div>${buy}</div></div>`;
+      }).join('') + '</div>';
+      if (mine && !p.acted && state.actionsLeft > 0) {
+        const n = E.shots(state, p).length;
+        if (n > 0) h += `<button type="button" data-fire class="fire ${fireMode ? 'on' : ''}">🎯 ${fireMode ? 'Back to moving' : 'Fire without moving'} (${n} target${n === 1 ? '' : 's'})</button>`;
+      }
       if (p.acted && p.color === state.turn) h += '<div class="muted">Already acted this turn.</div>';
       info.innerHTML = h;
-      info.querySelectorAll('[data-evo]').forEach((b) => b.addEventListener('click', () => doEvolve(p, b.dataset.evo)));
+      info.querySelectorAll('[data-buy]').forEach((b) => b.addEventListener('click', () => doBuy(p)));
+      info.querySelectorAll('[data-fire]').forEach((b) => b.addEventListener('click', () => { fireMode = !fireMode; select(p, true); }));
     }
     const ol = $('log');
     ol.innerHTML = logLines.slice(-40).map((l) => `<li class="${l.c}">${l.t}</li>`).reverse().join('');
@@ -250,9 +287,14 @@
 
   /* ---------- actions ---------- */
 
-  function select(p) {
+  function select(p, keepMode) {
+    if (p !== sel && !keepMode) fireMode = false;
     sel = p; targets = [];
-    if (p && myTurn() && p.color === state.turn && !p.acted && state.actionsLeft > 0) targets = E.moves(state, p);
+    if (p && myTurn() && p.color === state.turn && !p.acted && state.actionsLeft > 0) {
+      const shots = E.shots(state, p);
+      if (fireMode && !shots.length) fireMode = false;
+      targets = fireMode ? shots : E.moves(state, p);
+    }
     renderPanel(); dirty = true;
   }
 
@@ -271,30 +313,33 @@
     const prev = state.turn;
     const r = E.move(state, p.id, x, y);
     if (!r) return;
-    const c = SIDE[r.color][0];
-    let txt = `${c}: ${E.TYPES[r.piece].name} ${label(r.from.x, r.from.y)} → ${label(x, y)}`;
-    if (r.captured) txt += ` takes ${E.TYPES[r.captured].name}`;
-    if (r.xp) txt += ` (+${r.xp} XP)`;
-    log(txt, (r.captured ? 'cap ' : '') + r.color);
-    if (r.ready) log(`${c}: ${E.TYPES[r.piece].name} is ready to evolve!`, 'evo');
-    sel = null; targets = [];
-    if (state.turn === r.color && E.canEvolve(p)) sel = p; // keep it selected so the Evolve buttons show
+    log(describeAction(r), (r.captured ? 'cap ' : '') + r.color);
+    sel = null; targets = []; fireMode = false;
     afterAction(prev);
   }
 
-  function doPlace(x, y) {
-    const r = E.place(state, x, y);
+  function doShoot(p, x, y) {
+    const prev = state.turn;
+    const r = E.shoot(state, p.id, x, y);
     if (!r) return;
-    log(`${SIDE[r.color][0]}: a captured piece returns as a Pawn at ${label(x, y)} (Recruit).`, 'evo');
-    sel = null; targets = [];
+    log(describeAction(r), 'cap ' + r.color);
+    sel = null; targets = []; fireMode = false;
+    afterAction(prev);
+  }
+
+  function doBuy(p) {
+    const r = E.buy(state, p.id);
+    if (!r) return;
+    log(`${SIDE[p.color][0]}: ${E.TYPES[r.piece].name} buys ${r.upgrade.icon} ${r.upgrade.name} (−${money(r.upgrade.cost)}).`, 'evo');
+    select(p, true);
     refresh();
   }
 
-  function doEvolve(p, to) {
-    const r = E.evolve(state, p.id, to);
+  function doPlace(x, y) {
+    const r = E.place(state, x, y, placeKind);
     if (!r) return;
-    log(`${SIDE[p.color][0]}: ${E.TYPES[r.from].name} evolves into ${E.TYPES[r.to].name}!`, 'evo');
-    select(p);
+    log(`${SIDE[r.color][0]}: a captured ${E.TYPES[r.type].name} returns to its pocket at ${label(x, y)}, without upgrades.`, 'evo');
+    sel = null; targets = [];
     refresh();
   }
 
@@ -302,7 +347,7 @@
     if (!myTurn()) return;
     const prev = state.turn;
     E.endTurn(state);
-    sel = null; targets = [];
+    sel = null; targets = []; fireMode = false;
     afterAction(prev);
   }
 
@@ -312,33 +357,25 @@
     const step = () => {
       if (state.winner || state.turn !== 'b') { aiBusy = false; refresh(); return; }
       const a = AI.chooseAction(state);
+      const turnBefore = state.turn;
+      if (a.type === 'place') {
+        const r = E.place(state, a.x, a.y, a.kind);
+        if (r) log(`B: a captured ${E.TYPES[r.type].name} returns to its pocket, without upgrades.`, 'evo');
+        refresh(); setTimeout(step, 250); return;
+      }
+      if (a.type === 'buy') {
+        const r = E.buy(state, a.id);
+        if (r) log(`B: ${E.TYPES[r.piece].name} buys ${r.upgrade.icon} ${r.upgrade.name} (−${money(r.upgrade.cost)}).`, 'evo');
+        refresh(); setTimeout(step, 250); return;
+      }
       if (a.type === 'end') {
         E.endTurn(state);
-        log(`— ${SIDE[state.turn]}'s turn —`, 'turn');
-        logPending();
-        aiBusy = false; refresh(); return;
+      } else {
+        const r = a.type === 'shoot' ? E.shoot(state, a.id, a.x, a.y) : E.move(state, a.id, a.x, a.y);
+        if (r) { log(describeAction(r), (r.captured ? 'cap ' : '') + 'b'); ensureVisible(a.x, a.y); } else E.endTurn(state);
       }
-      if (a.type === 'place') {
-        const r = E.place(state, a.x, a.y);
-        if (r) log(`B: a captured piece returns as a Pawn at ${label(a.x, a.y)} (Recruit).`, 'evo');
-        refresh(); setTimeout(step, 250); return;
-      }
-      if (a.type === 'evolve') {
-        const r = E.evolve(state, a.id, a.to);
-        if (r) log(`B: ${E.TYPES[r.from].name} evolves into ${E.TYPES[r.to].name}!`, 'evo');
-        refresh(); setTimeout(step, 250); return;
-      }
-      const turnBefore = state.turn;
-      const r = E.move(state, a.id, a.x, a.y);
-      if (r) {
-        let txt = `B: ${E.TYPES[r.piece].name} ${label(r.from.x, r.from.y)} → ${label(a.x, a.y)}`;
-        if (r.captured) txt += ` takes ${E.TYPES[r.captured].name}`;
-        if (r.xp) txt += ` (+${r.xp} XP)`;
-        log(txt, (r.captured ? 'cap ' : '') + 'b');
-        ensureVisible(a.x, a.y);
-        if (state.turn !== turnBefore && !state.winner) { log(`— ${SIDE[state.turn]}'s turn —`, 'turn'); logPending(); }
-        if (state.winner) log(state.winner === 'draw' ? 'Draw.' : `${SIDE[state.winner]} wins!`, 'evo');
-      }
+      if (state.turn !== turnBefore && !state.winner) { log(`— ${SIDE[state.turn]}'s turn —`, 'turn'); logPending(); }
+      if (state.winner) log(state.winner === 'draw' ? 'Draw.' : `${SIDE[state.winner]} wins!`, 'evo');
       if (state.winner || state.turn !== 'b') aiBusy = false;
       refresh();
       if (aiBusy) setTimeout(step, 350);
@@ -401,7 +438,7 @@
   function click(x, y) {
     if (!E.inside(state, x, y)) { select(null); return; }
     const p = E.pieceAt(state, x, y);
-    if (sel && myTurn() && targets.some((t) => t.x === x && t.y === y)) { doMove(sel, x, y); return; }
+    if (sel && myTurn() && targets.some((t) => t.x === x && t.y === y)) { if (fireMode) doShoot(sel, x, y); else doMove(sel, x, y); return; }
     if (!p && canPlace() && E.inPocket(state, state.turn, x, y)) { doPlace(x, y); return; }
     select(p && p !== sel ? p : null);
   }
@@ -455,8 +492,12 @@
   });
   window.addEventListener('resize', resize);
 
+  // Rules: the upgrade list comes straight from the engine so it always matches the real costs and effects.
+  $('upgrade-list').innerHTML = Object.keys(E.UPGRADES).map((k) =>
+    `<li><b>${E.TYPES[k].name}:</b> ` + E.UPGRADES[k].map((u) => `${u.icon} ${u.name} ($${u.cost}) — ${u.desc}`).join(' &nbsp;→&nbsp; ') + '</li>').join('');
+
   function start(size, m) {
-    mode = m; aiBusy = false; sel = null; targets = [];
+    mode = m; aiBusy = false; sel = null; targets = []; fireMode = false; placeKind = null;
     state = E.newGame(size);
     logLines = [];
     log(`New game: ${size}×${size}, ${E.actionsFor(size)} actions per turn.`, 'turn');

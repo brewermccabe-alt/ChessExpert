@@ -58,12 +58,15 @@ Puzzle ids come from the position and first move, so rebuilding keeps each playe
 
 ## Evolution Chess (variant)
 
-A separate, playable chess variant in [`evolution/`](evolution/index.html) (open `evolution/index.html`, no build step). It's played on a vast 24, 40 or 64 square board, but each side starts with a classic 2×8 army (pawns plus R N B Q K B N R) in a 2×8 pocket attached to the edge of the board, leaving a huge empty middle to cross. Captured pieces come back as Pawns you place anywhere in your pocket (they cannot capture until they step out):
+A separate, playable chess variant in [`evolution/`](evolution/index.html) (open `evolution/index.html`, no build step), on a vast 24, 40 or 64 square board:
 
-- **Piece evolution:** pieces earn XP by capturing (and pawns by marching) and evolve for free: Pawn → Knight/Bishop → Rook/Nightrider → Queen → Amazon (queen + knight).
+- **Pockets:** each side starts with a classic 2×8 army (pawns plus R N B Q K B N R) in a 2×8 pocket attached to the edge of the board, leaving a huge empty middle to cross.
+- **Money and upgrades:** every move earns $50 and every capture $150. Spend it in the side-panel shop on each piece's fixed upgrade path: Pawn (jet engine, sword, halo), Knight (extra life, extending potion, bow, bishop's mage), Bishop (freeze potion, steroids), Rook (cannon, castle), Queen (katana, horse's head, wings), King (long arm).
+- **Firing:** some upgrades capture without moving the piece (a 🎯 button appears).
+- **Home base:** a captured piece returns to its pocket, on a square you choose, as the same kind of piece with no upgrades. A Knight's Extra life brings it back at once with its upgrades.
 - **Multiple actions per turn** (board width ÷ 8), each piece acting once, and **no check**: capture the enemy King to win.
 - Play a greedy computer opponent or a friend on one screen. Pan, zoom, and a minimap keep the huge board manageable. The game autosaves.
-- Rules engine and AI live in `evolution/game.js` and `evolution/ai.js`; run `node evolution/test.js` to test them.
+- The rules engine and AI live in `evolution/game.js` and `evolution/ai.js`; run `node evolution/test.js` to test them.
 
 ## Credits
 

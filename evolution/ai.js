@@ -1,26 +1,32 @@
-/* Simple greedy opponent for Evolution Chess. Picks one action at a time:
- * evolve if it can, otherwise the best-scoring move (captures, safety, advancing on the enemy King). */
+/* Simple greedy opponent for Evolution Chess. Picks one action at a time: place a waiting piece, buy an upgrade,
+ * or the best-scoring move/shot (captures, safety, advancing on the enemy King). */
 (function (root) {
   'use strict';
   const E = typeof module !== 'undefined' ? require('./game.js') : root.Evo;
 
   const cheb = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 
-  function chooseEvolution(p) {
-    const to = E.EVOLVE[p.type].to;
-    return to[Math.floor(Math.random() * to.length)];
-  }
-
   function chooseAction(s) {
     const me = s.turn, foe = E.other(me);
     const mine = s.pieces.filter((p) => p.color === me);
 
-    if (s.pending[me] > 0) {
+    if (s.pending[me].length) {
       const free = E.freePocketSquares(s, me);
-      if (free.length) { const f = free[Math.floor(Math.random() * free.length)]; return { type: 'place', x: f.x, y: f.y }; }
+      if (free.length) {
+        const f = free[Math.floor(Math.random() * free.length)];
+        return { type: 'place', x: f.x, y: f.y, kind: s.pending[me][0] };
+      }
     }
 
-    for (const p of mine) if (E.canEvolve(p)) return { type: 'evolve', id: p.id, to: chooseEvolution(p) };
+    // Spend money as soon as an upgrade is affordable (dearest first; the King's arm is a low priority).
+    let buy = null;
+    for (const p of mine) {
+      const u = E.nextUpgrade(p);
+      if (!u || s.bank[me] < u.cost) continue;
+      const score = u.cost + Math.random() * 60 - (p.type === 'king' ? 200 : 0);
+      if (!buy || score > buy.score) buy = { score, id: p.id };
+    }
+    if (buy) return { type: 'buy', id: buy.id };
 
     const king = s.pieces.find((p) => p.color === foe && p.type === 'king');
     let best = null;
@@ -29,6 +35,14 @@
       const val = E.TYPES[p.type].value;
       const wasThreatened = E.attacked(s, p.x, p.y, foe);
       const distBefore = king ? cheb(p, king) : 0;
+
+      // Stationary captures: safe, since the piece does not move.
+      for (const t of E.shots(s, p)) {
+        const victim = E.pieceAt(s, t.x, t.y);
+        const score = E.TYPES[victim.type].value * 10 + 4 + Math.random() * 0.5;
+        if (!best || score > best.score) best = { score, type: 'shoot', id: p.id, x: t.x, y: t.y };
+      }
+
       for (const m of E.moves(s, p)) {
         const victim = m.capture ? E.pieceAt(s, m.x, m.y) : null;
         let score = victim ? E.TYPES[victim.type].value * 10 : 0;
@@ -48,13 +62,12 @@
         } else if (king) {
           score += (distBefore - cheb(m, king)) * (p.type === 'pawn' ? 0.6 : 0.4);
         }
-        if (p.type === 'pawn' && !victim && Math.floor((p.steps + Math.abs(m.y - p.y)) / 6) > Math.floor(p.steps / 6)) score += 1.5;
         score += Math.random() * 0.5;
-        if (!best || score > best.score) best = { score, id: p.id, x: m.x, y: m.y };
+        if (!best || score > best.score) best = { score, type: 'move', id: p.id, x: m.x, y: m.y };
       }
     }
     if (!best || best.score < -6) return { type: 'end' };
-    return { type: 'move', id: best.id, x: best.x, y: best.y };
+    return { type: best.type, id: best.id, x: best.x, y: best.y };
   }
 
   const api = { chooseAction };

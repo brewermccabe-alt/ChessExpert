@@ -41,13 +41,20 @@
   const isHuman = (color) => mode === 'hot' || color === 'w';
   const myTurn = () => !state.winner && !aiBusy && isHuman(state.turn);
   const nameOf = (p) => E.TYPES[p.type].name;
-  const canPlace = () => myTurn() && state.pending[state.turn].length > 0 && E.freePocketSquares(state, state.turn).length > 0;
+  const canPlace = () => myTurn() && state.pending[state.turn].length > 0 && E.freePocketSquares(state, state.turn).length > 0 &&
+    !(state.chess && state.check);
   const affordable = (p) => {
     if (state.winner || p.color !== state.turn || !isHuman(p.color) || aiBusy) return false;
     const u = E.nextUpgrade(p);
     return !!u && state.bank[p.color] >= u.cost;
   };
+  function resultText() {
+    if (state.winner === 'draw') return state.result === 'stalemate' ? 'Stalemate: the game is a draw.' : 'Draw.';
+    if (state.result === 'checkmate') return `Checkmate! ${SIDE[state.winner]} wins.`;
+    return `${SIDE[state.winner]} wins!`;
+  }
   function logPending() {
+    if (state.check && !state.winner) log(`${SIDE[state.turn]} is in check!`, 'cap');
     const n = state.pending[state.turn].length;
     if (isHuman(state.turn) && n > 0) log(`${SIDE[state.turn][0]}: ${n} captured piece${n === 1 ? ' is' : 's are'} waiting. Pick one and click a free square in your pocket.`, 'evo');
     const f = state.pieces.filter((p) => p.color === state.turn && p.frozen).length;
@@ -55,6 +62,7 @@
   }
   function describeAction(r) {
     const c = SIDE[r.color][0], name = E.TYPES[r.piece].name;
+    if (r.castle) return `${c}: King castles ${r.castle} (${r.castle === 'kingside' ? 'O-O' : 'O-O-O'}) (+$${r.gain})`;
     let t = r.shot ? `${c}: ${name} at ${label(r.from.x, r.from.y)} fires at ${label(r.to.x, r.to.y)}` : `${c}: ${name} ${label(r.from.x, r.from.y)} → ${label(r.to.x, r.to.y)}`;
     if (r.captured) t += ` and takes ${E.TYPES[r.captured].name}`;
     t += ` (+$${r.gain})`;
@@ -157,6 +165,11 @@
       }
     }
     if (state.last) { tile(state.last.from.x, state.last.from.y, 'rgba(240,200,60,.45)'); tile(state.last.to.x, state.last.to.y, 'rgba(240,200,60,.55)'); }
+    if (state.check && !state.winner || state.result === 'checkmate') {
+      const loser = state.result === 'checkmate' ? E.other(state.winner) : state.turn;
+      const kg = state.pieces.find((p) => p.color === loser && p.type === 'king');
+      if (kg) tile(kg.x, kg.y, 'rgba(230,40,40,.6)');
+    }
     if (sel) tile(sel.x, sel.y, 'rgba(70,140,255,.55)');
 
     const now = Date.now();
@@ -246,16 +259,17 @@
   const money = (n) => '$' + n;
   function renderPanel() {
     const t = $('turn'), a = $('actions');
-    if (state.winner === 'draw') { t.textContent = 'Draw — no legal moves'; a.textContent = ''; }
-    else if (state.winner) { t.textContent = `${SIDE[state.winner]} wins!`; a.textContent = 'The enemy King has fallen.'; }
+    if (state.winner === 'draw') { t.textContent = state.result === 'stalemate' ? 'Stalemate — draw' : 'Draw — no legal moves'; a.textContent = state.result === 'stalemate' ? 'No legal move, and the King is not in check.' : ''; }
+    else if (state.winner) { t.textContent = state.result === 'checkmate' ? `Checkmate — ${SIDE[state.winner]} wins!` : `${SIDE[state.winner]} wins!`; a.textContent = state.result === 'checkmate' ? 'The King is in check with no escape.' : 'The enemy King has fallen.'; }
     else {
-      t.textContent = `${SIDE[state.turn]} to move` + (aiBusy ? ' (thinking…)' : '');
+      t.textContent = `${SIDE[state.turn]} to move` + (state.check ? ' — CHECK!' : '') + (aiBusy ? ' (thinking…)' : '');
       a.textContent = `${state.actionsLeft} action${state.actionsLeft === 1 ? '' : 's'} left · turn ${Math.ceil(state.turnNo / 2)}`;
     }
     $('bank').innerHTML = `Bank: White <b>${money(state.bank.w)}</b> · Black <b>${money(state.bank.b)}</b>`;
-    $('end').disabled = !myTurn();
+    $('end').disabled = !myTurn() || !E.canPass(state);
+    $('end').title = state.chess && myTurn() && !E.canPass(state) ? 'You must make a move' : '';
     $('banner').hidden = !state.winner;
-    $('banner').textContent = state.winner === 'draw' ? 'Draw' : state.winner ? `${SIDE[state.winner]} wins!` : '';
+    $('banner').textContent = state.winner === 'draw' ? (state.result === 'stalemate' ? 'Stalemate' : 'Draw') : state.winner ? (state.result === 'checkmate' ? `Checkmate — ${SIDE[state.winner]} wins!` : `${SIDE[state.winner]} wins!`) : '';
 
     const info = $('info');
     if (!sel) {
@@ -266,6 +280,8 @@
           '<div class="muted">Pick one, then click a glowing <b>+</b> square in your pocket. It returns without its upgrades.</div>' +
           '<div class="evolves">' + kinds.map((k) => `<button type="button" data-kind="${k}" class="${k === placeKind ? 'on' : ''}">${E.TYPES[k].name} ×${list.filter((q) => q === k).length}</button>`).join('') + '</div>';
         info.querySelectorAll('[data-kind]').forEach((b) => b.addEventListener('click', () => { placeKind = b.dataset.kind; renderPanel(); }));
+      } else if (myTurn() && state.check && state.pending[state.turn].length) {
+        info.innerHTML = '<b>You are in check.</b><div class="muted">Answer the check with a move before placing a returning piece.</div>';
       } else {
         info.innerHTML = '<span class="muted">Click a piece to see its moves and upgrades. Moving earns $50 and capturing $150; spend it on upgrades. Drag the board to pan, scroll to zoom.</span>';
       }
@@ -285,7 +301,7 @@
         return `<div class="up ${cls}"><span class="ico">${u.icon}</span><div><b>${u.name}</b> · ${money(u.cost)}<div class="muted">${u.desc}</div>${buy}</div></div>`;
       }).join('') + '</div>';
       if (mine && !p.acted && state.actionsLeft > 0) {
-        const n = E.shots(state, p).length;
+        const n = E.legalShots(state, p).length;
         if (n > 0) h += `<button type="button" data-fire class="fire ${fireMode ? 'on' : ''}">🎯 ${fireMode ? 'Back to moving' : 'Fire without moving'} (${n} target${n === 1 ? '' : 's'})</button>`;
       }
       if (p.acted && p.color === state.turn) h += '<div class="muted">Already acted this turn.</div>';
@@ -305,9 +321,9 @@
     if (p !== sel && !keepMode) fireMode = false;
     sel = p; targets = [];
     if (p && myTurn() && p.color === state.turn && !p.acted && state.actionsLeft > 0) {
-      const shots = E.shots(state, p);
+      const shots = E.legalShots(state, p);
       if (fireMode && !shots.length) fireMode = false;
-      targets = fireMode ? shots : E.moves(state, p);
+      targets = fireMode ? shots : E.legalMoves(state, p);
     }
     renderPanel(); dirty = true;
   }
@@ -318,7 +334,7 @@
       logPending();
       if (mode === 'hot') goHome();
     }
-    if (state.winner) log(state.winner === 'draw' ? 'Draw.' : `${SIDE[state.winner]} wins!`, 'evo');
+    if (state.winner) log(resultText(), 'evo');
     refresh();
     if (!state.winner && mode === 'ai' && state.turn === 'b') runAI();
   }
@@ -358,7 +374,7 @@
   }
 
   function endTurn() {
-    if (!myTurn()) return;
+    if (!myTurn() || !E.canPass(state)) return;
     const prev = state.turn;
     E.endTurn(state);
     sel = null; targets = []; fireMode = false;
@@ -389,7 +405,7 @@
         if (r) { log(describeAction(r), (r.captured ? 'cap ' : '') + 'b'); ensureVisible(a.x, a.y); } else E.endTurn(state);
       }
       if (state.turn !== turnBefore && !state.winner) { log(`— ${SIDE[state.turn]}'s turn —`, 'turn'); logPending(); }
-      if (state.winner) log(state.winner === 'draw' ? 'Draw.' : `${SIDE[state.winner]} wins!`, 'evo');
+      if (state.winner) log(resultText(), 'evo');
       if (state.winner || state.turn !== 'b') aiBusy = false;
       refresh();
       if (aiBusy) setTimeout(step, 350);

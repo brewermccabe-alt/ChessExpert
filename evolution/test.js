@@ -81,6 +81,139 @@ for (const size of E.SIZES) {
   assert.ok(r40.some((m) => m.x === 10 && m.y === 20) && !r40.some((m) => m.x === 11 && m.y === 20), 'huge board still caps slides at 8');
 }
 
+// ---------- 8x8 chess rules: check, checkmate, stalemate, castling ----------
+{
+  const sq = (name) => [name.charCodeAt(0) - 97, 8 - parseInt(name[1], 10)];   // 'e1' -> [4, 7]
+  /* list: [type, color, 'e1', moved?]; both sides may have more pieces. */
+  function pos(list, extra) {
+    let id = 1;
+    const pieces = list.map(([type, color, name, moved, lvl]) => { const [x, y] = sq(name); return [id++, type, color, x, y, lvl || 0, 0, 0, 0, moved ? 1 : 0]; });
+    return E.fromJSON(Object.assign({ size: 8, turn: 'w', actionsLeft: 1, turnNo: 1, winner: null, nextId: id, last: null,
+      pending: { w: [], b: [] }, bank: { w: 0, b: 0 }, pieces }, extra || {}));
+  }
+  const to = (name) => sq(name);
+  const legal = (s, name) => E.legalMoves(s, E.pieceAt(s, ...sq(name))).map((m) => String.fromCharCode(97 + m.x) + (8 - m.y)).sort();
+
+  assert.ok(E.newGame(8).chess && !E.newGame(24).chess, 'chess rules on 8x8 only');
+  assert.ok(!E.newGame(8).check);
+
+  // A King cannot step into check, and a pinned piece cannot leave the line
+  let s = pos([['king', 'w', 'e1'], ['rook', 'b', 'a2'], ['king', 'b', 'h8']]);
+  assert.deepStrictEqual(legal(s, 'e1'), ['d1', 'f1'], 'cannot step onto the attacked second rank');
+  s = pos([['king', 'w', 'e1'], ['bishop', 'w', 'e2'], ['rook', 'b', 'e8'], ['king', 'b', 'h8']]);
+  assert.deepStrictEqual(legal(s, 'e2'), [], 'a bishop pinned on the file cannot move');
+  s = pos([['king', 'w', 'e1'], ['rook', 'w', 'e2'], ['rook', 'b', 'e8'], ['king', 'b', 'h8']]);
+  assert.ok(legal(s, 'e2').includes('e5') && !legal(s, 'e2').includes('d2'), 'a pinned rook may slide along the pin');
+  assert.strictEqual(E.move(s, E.pieceAt(s, ...sq('e2')).id, ...to('d2')), null, 'illegal move is rejected');
+
+  // Check: you must answer it
+  s = pos([['king', 'w', 'e1'], ['knight', 'w', 'b1'], ['rook', 'b', 'e8'], ['king', 'b', 'h8']]);
+  assert.ok(E.inCheck(s, 'w'));
+  assert.ok(s.check, 'the loaded position reports check');
+  assert.deepStrictEqual(legal(s, 'b1'), [], 'the knight cannot block the check, so it has no legal move');
+  s = pos([['king', 'w', 'e1'], ['rook', 'w', 'a4'], ['rook', 'b', 'e8'], ['king', 'b', 'h8']]);
+  assert.deepStrictEqual(legal(s, 'a4'), ['e4'], 'the only legal rook move blocks the check');
+  // Check is reported on the next turn
+  s = pos([['king', 'w', 'e1'], ['rook', 'w', 'a1'], ['king', 'b', 'e8']]);
+  E.move(s, E.pieceAt(s, ...sq('a1')).id, ...to('a8'));
+  assert.strictEqual(s.turn, 'b');
+  assert.ok(s.check && !s.winner, 'Black is in check but can escape');
+
+  // Cannot place a returning piece while in check
+  s = pos([['king', 'w', 'e1'], ['rook', 'b', 'e8'], ['king', 'b', 'h8']], { pending: { w: ['pawn'], b: [] } });
+  assert.strictEqual(E.place(s, 0, 6, 'pawn'), null, 'no placing while in check');
+
+  // Fool's mate: 1. f3 e5 2. g4 Qh4#
+  s = E.newGame(8);
+  const play = (a, b) => { const p = E.pieceAt(s, ...sq(a)); assert.ok(E.move(s, p.id, ...sq(b)), a + '-' + b); };
+  play('f2', 'f3'); play('e7', 'e5'); play('g2', 'g4');
+  assert.ok(!s.winner);
+  play('d8', 'h4');
+  assert.strictEqual(s.winner, 'b');
+  assert.strictEqual(s.result, 'checkmate');
+  assert.ok(s.check);
+
+  // Stalemate: Black king h8, White Qg6 and Kf7: Black to move with no legal move and not in check
+  s = pos([['king', 'b', 'h8'], ['king', 'w', 'f7'], ['queen', 'w', 'g5']]);
+  assert.ok(E.move(s, E.pieceAt(s, ...sq('g5')).id, ...to('g6')));
+  assert.strictEqual(s.winner, 'draw');
+  assert.strictEqual(s.result, 'stalemate');
+  assert.ok(!s.check);
+
+  // Being stuck is not stalemate if a waiting piece can still be placed
+  s = pos([['king', 'b', 'h8'], ['king', 'w', 'f7'], ['queen', 'w', 'g5']], { pending: { w: [], b: ['pawn'] } });
+  E.move(s, E.pieceAt(s, ...sq('g5')).id, ...to('g6'));
+  assert.ok(!s.winner, 'Black can still place a returning piece');
+
+  // Passing: not allowed while you can move, allowed when nothing can (all frozen)
+  s = E.newGame(8);
+  assert.ok(!E.canPass(s));
+  assert.ok(E.canPass(E.newGame(24)), 'big boards may always pass');
+  s = pos([['king', 'w', 'e1'], ['king', 'b', 'e8']]);
+  E.endTurn(s); // Black to move
+  E.pieceAt(s, ...sq('e8')).frozen = true;
+  assert.ok(E.canPass(s), 'a frozen side has nothing legal to do');
+
+  // Castling
+  const castleSetup = (extraBlack) => pos([['king', 'w', 'e1'], ['rook', 'w', 'h1'], ['rook', 'w', 'a1'], ['king', 'b', 'e8']].concat(extraBlack || []));
+  s = castleSetup();
+  let km = E.legalMoves(s, E.pieceAt(s, ...sq('e1'))).filter((m) => m.castle);
+  assert.deepStrictEqual(km.map((m) => m.x).sort(), [2, 6], 'both castling moves are available');
+  const king = E.pieceAt(s, ...sq('e1'));
+  assert.ok(E.move(s, king.id, ...to('g1')));
+  assert.deepStrictEqual([E.pieceAt(s, ...sq('g1')).type, E.pieceAt(s, ...sq('f1')).type], ['king', 'rook'], 'kingside castle moved both pieces');
+  assert.strictEqual(E.pieceAt(s, ...sq('h1')), null);
+  assert.ok(E.pieceAt(s, ...sq('a1')).type === 'rook');
+  s = castleSetup();
+  assert.ok(E.move(s, E.pieceAt(s, ...sq('e1')).id, ...to('c1')));
+  assert.deepStrictEqual([E.pieceAt(s, ...sq('c1')).type, E.pieceAt(s, ...sq('d1')).type], ['king', 'rook'], 'queenside castle');
+  assert.strictEqual(E.pieceAt(s, ...sq('a1')), null);
+  // blocked by a piece between
+  s = castleSetup([['bishop', 'w', 'f1']]);
+  assert.ok(!E.legalMoves(s, E.pieceAt(s, ...sq('e1'))).some((m) => m.x === 6), 'a piece between blocks it');
+  // not out of check
+  s = castleSetup([['rook', 'b', 'e5']]);
+  assert.ok(!E.legalMoves(s, E.pieceAt(s, ...sq('e1'))).some((m) => m.castle), 'cannot castle out of check');
+  // not through an attacked square
+  s = castleSetup([['rook', 'b', 'f5']]);
+  km = E.legalMoves(s, E.pieceAt(s, ...sq('e1'))).filter((m) => m.castle);
+  assert.deepStrictEqual(km.map((m) => m.x), [2], 'kingside is attacked at f1, queenside is fine');
+  // not into check
+  s = castleSetup([['rook', 'b', 'g5']]);
+  assert.deepStrictEqual(E.legalMoves(s, E.pieceAt(s, ...sq('e1'))).filter((m) => m.castle).map((m) => m.x), [2]);
+  // an attacked b1 does not matter for queenside
+  s = castleSetup([['rook', 'b', 'b5']]);
+  assert.ok(E.legalMoves(s, E.pieceAt(s, ...sq('e1'))).some((m) => m.castle && m.x === 2), 'b1 may be attacked');
+  // a moved King or Rook cannot castle
+  s = pos([['king', 'w', 'e1', true], ['rook', 'w', 'h1'], ['king', 'b', 'e8']]);
+  assert.ok(!E.legalMoves(s, E.pieceAt(s, ...sq('e1'))).some((m) => m.castle), 'moved king');
+  s = pos([['king', 'w', 'e1'], ['rook', 'w', 'h1', true], ['king', 'b', 'e8']]);
+  assert.ok(!E.legalMoves(s, E.pieceAt(s, ...sq('e1'))).some((m) => m.castle), 'moved rook');
+  // moving and coming back loses the right
+  s = pos([['king', 'w', 'e1'], ['rook', 'w', 'h1'], ['king', 'b', 'e8']]);
+  E.move(s, E.pieceAt(s, ...sq('h1')).id, ...to('h2')); E.endTurn(s);
+  E.move(s, E.pieceAt(s, ...sq('e8')).id, ...to('d8'));
+  E.move(s, E.pieceAt(s, ...sq('h2')).id, ...to('h1')); E.endTurn(s);
+  assert.ok(!E.legalMoves(s, E.pieceAt(s, ...sq('e1'))).some((m) => m.castle), 'the rook moved once, so no castling');
+  // Black castles too
+  s = pos([['king', 'w', 'e1'], ['king', 'b', 'e8'], ['rook', 'b', 'h8']]);
+  E.endTurn(s);
+  assert.ok(E.move(s, E.pieceAt(s, ...sq('e8')).id, ...to('g8')));
+  assert.strictEqual(E.pieceAt(s, ...sq('f8')).type, 'rook');
+  // a returned rook cannot castle
+  s = pos([['king', 'w', 'e1'], ['king', 'b', 'e8']], { pending: { w: ['rook'], b: [] } });
+  assert.ok(E.place(s, 7, 7, 'rook'));
+  assert.ok(!E.legalMoves(s, E.pieceAt(s, ...sq('e1'))).some((m) => m.castle), 'a returned rook counts as moved');
+  // upgrades count for check: a cannon (rook, level 1) fires two squares along a rank
+  s = pos([['king', 'w', 'e1'], ['rook', 'b', 'b1', false, 1], ['king', 'b', 'e8']]);
+  assert.ok(E.inCheck(s, 'w'), 'not blocked: a slide gives check');
+  s = pos([['king', 'w', 'e1'], ['pawn', 'w', 'd1'], ['rook', 'b', 'b1', false, 1], ['king', 'b', 'e8']]);
+  assert.ok(E.inCheck(s, 'w'), 'a cannon shoots over the blocker: still check');
+  // and the big boards keep the old rule: no legality filter
+  const bigB = E.newGame(24);
+  assert.strictEqual(E.legalMoves(bigB, E.pieceAt(bigB, 10, 26)).length, E.moves(bigB, E.pieceAt(bigB, 10, 26)).length);
+}
+
 // ---------- pawn basics, bank ----------
 let s = E.newGame(S);
 const pw = at(s, 10, WP);

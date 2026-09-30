@@ -10,7 +10,7 @@
     const me = s.turn, foe = E.other(me);
     const mine = s.pieces.filter((p) => p.color === me);
 
-    if (s.pending[me].length) {
+    if (s.pending[me].length && !(s.chess && E.inCheck(s, me))) { // no placing while in check
       const free = E.freePocketSquares(s, me);
       if (free.length) {
         const f = free[Math.floor(Math.random() * free.length)];
@@ -37,13 +37,13 @@
       const distBefore = king ? cheb(p, king) : 0;
 
       // Stationary captures: safe, since the piece does not move.
-      for (const t of E.shots(s, p)) {
+      for (const t of E.legalShots(s, p)) {
         const victim = E.pieceAt(s, t.x, t.y);
         const score = E.TYPES[victim.type].value * 10 + 4 + Math.random() * 0.5;
         if (!best || score > best.score) best = { score, type: 'shoot', id: p.id, x: t.x, y: t.y };
       }
 
-      for (const m of E.moves(s, p)) {
+      for (const m of E.legalMoves(s, p)) {
         const victim = m.capture ? E.pieceAt(s, m.x, m.y) : null;
         let score = victim ? E.TYPES[victim.type].value * 10 : 0;
 

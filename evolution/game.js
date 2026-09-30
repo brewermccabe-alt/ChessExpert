@@ -3,6 +3,8 @@
  *  - Boards of 8 (classic), 24, 40 or 64 squares. Each side starts with a classic 2x8 army in a 2x8 pocket: attached to
  *    the edge of the big boards, or simply its two home rows on the 8x8 board.
  *  - Several actions per turn; each piece may act once per turn. No check: capture the enemy King to win.
+ *  - On the classic 8x8 board the full chess rules apply: check, checkmate, stalemate and castling. On the big boards
+ *    there is no check: capture the King.
  *  - Each side has a bank of "chess money": +50 for a move, +150 for a capture. Spend it on a fixed upgrade path for
  *    each piece (a shop, no XP).
  *  - A captured piece returns to its owner's pocket (owner picks the square) as a plain, un-upgraded piece. The
@@ -92,7 +94,8 @@
     const pad = padFor(size);
     const h = size + 2 * pad;
     const s = { size, h, pad, cells: new Array(size * h).fill(null), pieces: [], turn: 'w', actionsLeft: actionsFor(size),
-      turnNo: 1, winner: null, nextId: 1, last: null, pending: { w: [], b: [] }, bank: { w: 0, b: 0 } };
+      turnNo: 1, winner: null, nextId: 1, last: null, pending: { w: [], b: [] }, bank: { w: 0, b: 0 },
+      chess: size <= 8, check: false, result: null };
     // Classic 2x8 army, starting in each side's pocket.
     const back = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
     const x0 = size / 2 - 4;
@@ -127,7 +130,7 @@
   }
 
   function add(s, type, color, x, y) {
-    const p = { id: s.nextId++, type, color, x, y, lvl: 0, acted: false, frozen: false, lifeSpent: false };
+    const p = { id: s.nextId++, type, color, x, y, lvl: 0, acted: false, frozen: false, lifeSpent: false, moved: false };
     s.pieces.push(p);
     s.cells[idx(s, x, y)] = p;
     return p;
@@ -270,9 +273,81 @@
     }
   }
 
-  function hasAnyMove(s, color) {
-    return s.pieces.some((p) => p.color === color && !p.acted && (moves(s, p).length || shots(s, p).length));
+  /* ---------- chess rules (8x8 only): check, checkmate, stalemate, castling ---------- */
+
+  const kingOf = (s, color) => s.pieces.find((q) => q.color === color && q.type === 'king');
+
+  function inCheck(s, color) {
+    const k = kingOf(s, color);
+    return !!k && attacked(s, k.x, k.y, other(color));
   }
+
+  /* Would p's own King be safe if p moved to (x, y), capturing whatever stands there? (Board is restored.) */
+  function safeAfterMove(s, p, x, y) {
+    const i0 = idx(s, p.x, p.y), i1 = idx(s, x, y), ox = p.x, oy = p.y;
+    const victim = s.cells[i1];
+    const vi = victim ? s.pieces.indexOf(victim) : -1;
+    if (victim) s.pieces.splice(vi, 1);
+    s.cells[i0] = null; s.cells[i1] = p; p.x = x; p.y = y;
+    const k = p.type === 'king' ? p : kingOf(s, p.color);
+    const ok = !k || !attacked(s, k.x, k.y, other(p.color));
+    s.cells[i1] = victim; s.cells[i0] = p; p.x = ox; p.y = oy;
+    if (victim) s.pieces.splice(vi, 0, victim);
+    return ok;
+  }
+
+  /* Would p's own King be safe if the enemy piece on (x, y) were captured without p moving? */
+  function safeAfterShot(s, p, x, y) {
+    const i1 = idx(s, x, y);
+    const victim = s.cells[i1];
+    const vi = s.pieces.indexOf(victim);
+    s.pieces.splice(vi, 1); s.cells[i1] = null;
+    const k = kingOf(s, p.color);
+    const ok = !k || !attacked(s, k.x, k.y, other(p.color));
+    s.cells[i1] = victim; s.pieces.splice(vi, 0, victim);
+    return ok;
+  }
+
+  /* Castling: King and Rook unmoved, squares between empty, and the King not in check, crossing or landing in check. */
+  function castleMoves(s, p) {
+    const out = [];
+    if (p.type !== 'king' || p.moved || p.frozen) return out;
+    const home = p.color === 'w' ? s.h - 1 : 0;
+    if (p.y !== home || p.x !== s.size / 2) return out;
+    if (attacked(s, p.x, p.y, other(p.color))) return out;
+    for (const side of [1, -1]) {
+      const rx = side === 1 ? s.size - 1 : 0;
+      const rook = s.cells[idx(s, rx, home)];
+      if (!rook || rook.type !== 'rook' || rook.color !== p.color || rook.moved || rook.frozen) continue;
+      let clear = true;
+      for (let x = p.x + side; x !== rx; x += side) if (s.cells[idx(s, x, home)]) clear = false;
+      if (!clear) continue;
+      if (!safeAfterMove(s, p, p.x + side, home) || !safeAfterMove(s, p, p.x + 2 * side, home)) continue;
+      out.push({ x: p.x + 2 * side, y: home, capture: false, castle: { rookFrom: { x: rx, y: home }, rookTo: { x: p.x + side, y: home } } });
+    }
+    return out;
+  }
+
+  /* The moves a player may actually make: on the chess board, those that leave their own King safe, plus castling. */
+  function legalMoves(s, p) {
+    const list = moves(s, p);
+    if (!s.chess) return list;
+    return list.filter((m) => safeAfterMove(s, p, m.x, m.y)).concat(castleMoves(s, p));
+  }
+
+  function legalShots(s, p) {
+    const list = shots(s, p);
+    if (!s.chess) return list;
+    return list.filter((m) => safeAfterShot(s, p, m.x, m.y));
+  }
+
+  function hasLegalAction(s, color) {
+    return s.pieces.some((p) => p.color === color && !p.acted && (legalMoves(s, p).length || legalShots(s, p).length));
+  }
+  const hasAnyMove = hasLegalAction;
+
+  /* Passing is allowed on the big boards. On the chess board only when nothing can legally move (for example, frozen). */
+  const canPass = (s) => !s.chess || !hasLegalAction(s, s.turn);
 
   function endTurn(s) {
     if (s.winner) return;
@@ -289,6 +364,22 @@
     s.actionsLeft = actionsFor(s.size);
     s.turnNo++;
     for (const p of s.pieces) p.acted = false;
+    if (s.chess) {
+      s.check = inCheck(s, foe);
+      if (!hasLegalAction(s, foe)) {
+        // Frozen pieces alone may be why nothing can move: that is a forced pass, not mate or stalemate.
+        const thawed = s.pieces.filter((q) => q.color === foe && q.frozen);
+        for (const q of thawed) q.frozen = false;
+        const wouldHaveMoves = hasLegalAction(s, foe);
+        for (const q of thawed) q.frozen = true;
+        // A waiting piece can still be placed (not while in check), which may give the side a move.
+        const canPlaceNow = !s.check && s.pending[foe].length > 0 && freePocketSquares(s, foe).length > 0;
+        if (!wouldHaveMoves && !canPlaceNow) {
+          if (s.check) { s.winner = ending; s.result = 'checkmate'; } else { s.winner = 'draw'; s.result = 'stalemate'; }
+        }
+      }
+      return;
+    }
     if (!s.pieces.some((p) => p.color === foe && p.frozen) && !hasAnyMove(s, foe)) s.winner = 'draw';
   }
 
@@ -329,15 +420,24 @@
     if (s.winner || s.actionsLeft <= 0) return null;
     const p = s.pieces.find((q) => q.id === id);
     if (!p || p.color !== s.turn || p.acted) return null;
-    const m = moves(s, p).find((q) => q.x === x && q.y === y);
+    const m = legalMoves(s, p).find((q) => q.x === x && q.y === y);
     if (!m) return null;
-    const res = { id, piece: p.type, color: p.color, from: { x: p.x, y: p.y }, to: { x, y }, captured: null, revived: null, gain: MOVE_PAY };
+    const res = { id, piece: p.type, color: p.color, from: { x: p.x, y: p.y }, to: { x, y }, captured: null, revived: null, gain: MOVE_PAY, castle: null };
     const victim = m.capture ? pieceAt(s, x, y) : null;
     if (victim) remove(s, victim);
     s.cells[idx(s, p.x, p.y)] = null;
     p.x = x; p.y = y;
     s.cells[idx(s, x, y)] = p;
     p.acted = true;
+    p.moved = true;
+    if (m.castle) {
+      const rook = s.cells[idx(s, m.castle.rookFrom.x, m.castle.rookFrom.y)];
+      s.cells[idx(s, rook.x, rook.y)] = null;
+      rook.x = m.castle.rookTo.x; rook.y = m.castle.rookTo.y;
+      s.cells[idx(s, rook.x, rook.y)] = rook;
+      rook.moved = true;
+      res.castle = x > res.from.x ? 'kingside' : 'queenside';
+    }
     if (victim) {
       const info = afterCapture(s, victim, p.color);
       res.captured = info.captured; res.revived = info.revived; res.gain = CAPTURE_PAY;
@@ -354,7 +454,7 @@
     if (s.winner || s.actionsLeft <= 0) return null;
     const p = s.pieces.find((q) => q.id === id);
     if (!p || p.color !== s.turn || p.acted) return null;
-    if (!shots(s, p).some((t) => t.x === x && t.y === y)) return null;
+    if (!legalShots(s, p).some((t) => t.x === x && t.y === y)) return null;
     const victim = pieceAt(s, x, y);
     remove(s, victim);
     p.acted = true;
@@ -385,17 +485,19 @@
     const list = s.pending[s.turn];
     const i = type ? list.indexOf(type) : 0;
     if (!list.length || i < 0) return null;
+    if (s.chess && inCheck(s, s.turn)) return null; // resolve the check first
     if (!inPocket(s, s.turn, x, y) || s.cells[idx(s, x, y)]) return null;
     const kind = list.splice(i, 1)[0];
     const p = add(s, kind, s.turn, x, y);
+    p.moved = true;
     s.last = { from: { x, y }, to: { x, y } };
     return { id: p.id, x, y, color: p.color, type: kind };
   }
 
   function toJSON(s) {
     return { size: s.size, turn: s.turn, actionsLeft: s.actionsLeft, turnNo: s.turnNo, winner: s.winner, nextId: s.nextId,
-      last: s.last, pending: s.pending, bank: s.bank,
-      pieces: s.pieces.map((p) => [p.id, p.type, p.color, p.x, p.y, p.lvl, p.acted ? 1 : 0, p.frozen ? 1 : 0, p.lifeSpent ? 1 : 0]) };
+      last: s.last, pending: s.pending, bank: s.bank, result: s.result,
+      pieces: s.pieces.map((p) => [p.id, p.type, p.color, p.x, p.y, p.lvl, p.acted ? 1 : 0, p.frozen ? 1 : 0, p.lifeSpent ? 1 : 0, p.moved ? 1 : 0]) };
   }
 
   function fromJSON(j) {
@@ -403,19 +505,21 @@
     const h = j.size + 2 * pad;
     const s = { size: j.size, h, pad, cells: new Array(j.size * h).fill(null), pieces: [], turn: j.turn, actionsLeft: j.actionsLeft,
       turnNo: j.turnNo, winner: j.winner, nextId: j.nextId, last: j.last,
-      pending: { w: (j.pending && j.pending.w) || [], b: (j.pending && j.pending.b) || [] }, bank: j.bank || { w: 0, b: 0 } };
+      pending: { w: (j.pending && j.pending.w) || [], b: (j.pending && j.pending.b) || [] }, bank: j.bank || { w: 0, b: 0 },
+      chess: j.size <= 8, check: false, result: j.result || null };
     if (!Array.isArray(s.pending.w) || !Array.isArray(s.pending.b)) throw new Error('bad save');
-    for (const [id, type, color, x, y, lvl, acted, frozen, lifeSpent] of j.pieces) {
+    for (const [id, type, color, x, y, lvl, acted, frozen, lifeSpent, moved] of j.pieces) {
       if (!TYPES[type] || !inside(s, x, y)) throw new Error('bad save');
-      const p = { id, type, color, x, y, lvl: lvl || 0, acted: !!acted, frozen: !!frozen, lifeSpent: !!lifeSpent };
+      const p = { id, type, color, x, y, lvl: lvl || 0, acted: !!acted, frozen: !!frozen, lifeSpent: !!lifeSpent, moved: !!moved };
       s.pieces.push(p);
       s.cells[idx(s, x, y)] = p;
     }
+    s.check = s.chess && !s.winner && inCheck(s, s.turn);
     return s;
   }
 
   root.Evo = { TYPES, UPGRADES, SIZES, MOVE_PAY, CAPTURE_PAY, POCKET_H, newGame, pocket, inside, inPocket, freePocketSquares,
-    moves, shots, move, shoot, buy, place, endTurn, attacked, pieceAt, other, actionsFor, hasUpgrade, nextUpgrade,
-    toJSON, fromJSON, hasAnyMove };
+    moves, shots, legalMoves, legalShots, inCheck, canPass, hasLegalAction, move, shoot, buy, place, endTurn, attacked,
+    pieceAt, other, actionsFor, hasUpgrade, nextUpgrade, toJSON, fromJSON, hasAnyMove };
   if (typeof module !== 'undefined') module.exports = root.Evo;
 })(typeof window !== 'undefined' ? window : globalThis);

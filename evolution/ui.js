@@ -11,7 +11,7 @@
   const EMOJI_FONT = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
   const SIDE = { w: 'White', b: 'Black' };
 
-  let state, mode = 'ai', sel = null, targets = [], logLines = [], aiBusy = false, dirty = true, fireMode = false, placeKind = null;
+  let state, mode = 'ai', sel = null, targets = [], logLines = [], aiBusy = false, dirty = true, fireMode = false, placeKind = null, promo = null;
   const cam = { x: 0, y: 0, s: 24 };
   let W = 0, H = 0, dpr = 1;
 
@@ -65,6 +65,8 @@
     if (r.castle) return `${c}: King castles ${r.castle} (${r.castle === 'kingside' ? 'O-O' : 'O-O-O'}) (+$${r.gain})`;
     let t = r.shot ? `${c}: ${name} at ${label(r.from.x, r.from.y)} fires at ${label(r.to.x, r.to.y)}` : `${c}: ${name} ${label(r.from.x, r.from.y)} → ${label(r.to.x, r.to.y)}`;
     if (r.captured) t += ` and takes ${E.TYPES[r.captured].name}`;
+    if (r.enPassant) t += ' (en passant)';
+    if (r.promoted) t += ` and promotes to ${E.TYPES[r.promoted].name}`;
     t += ` (+$${r.gain})`;
     if (r.revived) t += ` — the Knight's extra life brings it back to its pocket`;
     return t;
@@ -272,7 +274,12 @@
     $('banner').textContent = state.winner === 'draw' ? (state.result === 'stalemate' ? 'Stalemate' : 'Draw') : state.winner ? (state.result === 'checkmate' ? `Checkmate — ${SIDE[state.winner]} wins!` : `${SIDE[state.winner]} wins!`) : '';
 
     const info = $('info');
-    if (!sel) {
+    if (promo && sel) {
+      const p = sel, { x, y } = promo;
+      info.innerHTML = '<b>Promote your pawn</b><div class="muted">Choose the piece it becomes. It starts without upgrades.</div>' +
+        '<div class="evolves">' + E.PROMOTIONS.map((k) => `<button type="button" data-promo="${k}">${E.TYPES[k].name}</button>`).join('') + '</div>';
+      info.querySelectorAll('[data-promo]').forEach((b) => b.addEventListener('click', () => { promo = null; doMove(p, x, y, b.dataset.promo); }));
+    } else if (!sel) {
       if (canPlace()) {
         const list = state.pending[state.turn], kinds = [...new Set(list)];
         if (!kinds.includes(placeKind)) placeKind = kinds[0];
@@ -318,6 +325,7 @@
   /* ---------- actions ---------- */
 
   function select(p, keepMode) {
+    promo = null;
     if (p !== sel && !keepMode) fireMode = false;
     sel = p; targets = [];
     if (p && myTurn() && p.color === state.turn && !p.acted && state.actionsLeft > 0) {
@@ -339,9 +347,11 @@
     if (!state.winner && mode === 'ai' && state.turn === 'b') runAI();
   }
 
-  function doMove(p, x, y) {
+  const promotes = (p, x, y) => state.chess && p.type === 'pawn' && y === (p.color === 'w' ? 0 : state.h - 1);
+
+  function doMove(p, x, y, kind) {
     const prev = state.turn;
-    const r = E.move(state, p.id, x, y);
+    const r = E.move(state, p.id, x, y, kind);
     if (!r) return;
     log(describeAction(r), (r.captured ? 'cap ' : '') + r.color);
     sel = null; targets = []; fireMode = false;
@@ -401,7 +411,7 @@
       if (a.type === 'end') {
         E.endTurn(state);
       } else {
-        const r = a.type === 'shoot' ? E.shoot(state, a.id, a.x, a.y) : E.move(state, a.id, a.x, a.y);
+        const r = a.type === 'shoot' ? E.shoot(state, a.id, a.x, a.y) : E.move(state, a.id, a.x, a.y, a.promo); // the computer promotes to a Queen
         if (r) { log(describeAction(r), (r.captured ? 'cap ' : '') + 'b'); ensureVisible(a.x, a.y); } else E.endTurn(state);
       }
       if (state.turn !== turnBefore && !state.winner) { log(`— ${SIDE[state.turn]}'s turn —`, 'turn'); logPending(); }
@@ -468,7 +478,12 @@
   function click(x, y) {
     if (!E.inside(state, x, y)) { select(null); return; }
     const p = E.pieceAt(state, x, y);
-    if (sel && myTurn() && targets.some((t) => t.x === x && t.y === y)) { if (fireMode) doShoot(sel, x, y); else doMove(sel, x, y); return; }
+    if (sel && myTurn() && targets.some((t) => t.x === x && t.y === y)) {
+      if (fireMode) doShoot(sel, x, y);
+      else if (promotes(sel, x, y)) { promo = { x, y }; renderPanel(); dirty = true; } // choose what to promote to
+      else doMove(sel, x, y);
+      return;
+    }
     if (!p && canPlace() && E.inPocket(state, state.turn, x, y)) { doPlace(x, y); return; }
     select(p && p !== sel ? p : null);
   }

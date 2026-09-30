@@ -3,7 +3,8 @@
  *  - Boards of 8 (classic), 24, 40 or 64 squares. Each side starts with a classic 2x8 army in a 2x8 pocket: attached to
  *    the edge of the big boards, or simply its two home rows on the 8x8 board.
  *  - Several actions per turn; each piece may act once per turn. No check: capture the enemy King to win.
- *  - On the classic 8x8 board the full chess rules apply: check, checkmate, stalemate and castling. On the big boards
+ *  - On the classic 8x8 board the full chess rules apply: check, checkmate, stalemate, castling, en passant and
+ *    pawn promotion. On the big boards
  *    there is no check: capture the King.
  *  - Each side has a bank of "chess money": +50 for a move, +150 for a capture. Spend it on a fixed upgrade path for
  *    each piece (a shop, no XP).
@@ -62,6 +63,7 @@
   const ALL8 = ORTHO.concat(DIAG);
   const KNIGHT = [[1, 2], [2, 1], [-1, 2], [-2, 1], [1, -2], [2, -1], [-1, -2], [-2, -1]];
   const SIZES = [8, 24, 40, 64];
+  const PROMOTIONS = ['queen', 'rook', 'bishop', 'knight'];
 
   const other = (c) => (c === 'w' ? 'b' : 'w');
   const idx = (s, x, y) => y * s.size + x;
@@ -95,7 +97,7 @@
     const h = size + 2 * pad;
     const s = { size, h, pad, cells: new Array(size * h).fill(null), pieces: [], turn: 'w', actionsLeft: actionsFor(size),
       turnNo: 1, winner: null, nextId: 1, last: null, pending: { w: [], b: [] }, bank: { w: 0, b: 0 },
-      chess: size <= 8, check: false, result: null };
+      chess: size <= 8, check: false, result: null, ep: null };
     // Classic 2x8 army, starting in each side's pocket.
     const back = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
     const x0 = size / 2 - 4;
@@ -196,6 +198,11 @@
           const t = at(p.x + dx, p.y + d);
           if (t && t.color !== p.color) out.push({ x: p.x + dx, y: p.y + d, capture: true });
         }
+        // En passant (chess board): capture a pawn that has just made a two-square move, as if it had moved one.
+        if (s.chess && s.ep && s.turnNo === s.ep.turnNo + 1 && s.ep.color !== p.color && p.y === s.ep.pawnY &&
+            s.ep.y === p.y + d && Math.abs(p.x - s.ep.x) === 1) {
+          out.push({ x: s.ep.x, y: s.ep.y, capture: true, ep: true });
+        }
         break;
       }
       case 'knight': {
@@ -282,16 +289,19 @@
     return !!k && attacked(s, k.x, k.y, other(color));
   }
 
-  /* Would p's own King be safe if p moved to (x, y), capturing whatever stands there? (Board is restored.) */
-  function safeAfterMove(s, p, x, y) {
+  /* Would p's own King be safe if p moved to (x, y), capturing whatever stands there (or, for en passant, the pawn
+   * beside it)? The board is restored afterwards. */
+  function safeAfterMove(s, p, x, y, m) {
     const i0 = idx(s, p.x, p.y), i1 = idx(s, x, y), ox = p.x, oy = p.y;
-    const victim = s.cells[i1];
+    const vIdx = m && m.ep ? idx(s, x, s.ep.pawnY) : i1;
+    const victim = s.cells[vIdx];
     const vi = victim ? s.pieces.indexOf(victim) : -1;
     if (victim) s.pieces.splice(vi, 1);
+    s.cells[vIdx] = null;
     s.cells[i0] = null; s.cells[i1] = p; p.x = x; p.y = y;
     const k = p.type === 'king' ? p : kingOf(s, p.color);
     const ok = !k || !attacked(s, k.x, k.y, other(p.color));
-    s.cells[i1] = victim; s.cells[i0] = p; p.x = ox; p.y = oy;
+    s.cells[i1] = null; s.cells[vIdx] = victim; s.cells[i0] = p; p.x = ox; p.y = oy;
     if (victim) s.pieces.splice(vi, 0, victim);
     return ok;
   }
@@ -332,7 +342,7 @@
   function legalMoves(s, p) {
     const list = moves(s, p);
     if (!s.chess) return list;
-    return list.filter((m) => safeAfterMove(s, p, m.x, m.y)).concat(castleMoves(s, p));
+    return list.filter((m) => safeAfterMove(s, p, m.x, m.y, m)).concat(castleMoves(s, p));
   }
 
   function legalShots(s, p) {
@@ -416,20 +426,27 @@
   }
 
   /* Move piece `id` to (x, y). Returns a result object or null if illegal. */
-  function move(s, id, x, y) {
+  function move(s, id, x, y, promo) {
     if (s.winner || s.actionsLeft <= 0) return null;
     const p = s.pieces.find((q) => q.id === id);
     if (!p || p.color !== s.turn || p.acted) return null;
     const m = legalMoves(s, p).find((q) => q.x === x && q.y === y);
     if (!m) return null;
-    const res = { id, piece: p.type, color: p.color, from: { x: p.x, y: p.y }, to: { x, y }, captured: null, revived: null, gain: MOVE_PAY, castle: null };
-    const victim = m.capture ? pieceAt(s, x, y) : null;
+    // A pawn reaching the last rank of the chess board promotes (to a Queen unless another piece is chosen).
+    const promotes = s.chess && p.type === 'pawn' && y === (p.color === 'w' ? 0 : s.h - 1);
+    if (promotes) { promo = promo || 'queen'; if (!PROMOTIONS.includes(promo)) return null; }
+    const res = { id, piece: p.type, color: p.color, from: { x: p.x, y: p.y }, to: { x, y }, captured: null, revived: null, gain: MOVE_PAY,
+      castle: null, promoted: null, enPassant: !!m.ep };
+    const victim = m.capture ? (m.ep ? pieceAt(s, x, s.ep.pawnY) : pieceAt(s, x, y)) : null;
+    s.ep = null;
     if (victim) remove(s, victim);
     s.cells[idx(s, p.x, p.y)] = null;
     p.x = x; p.y = y;
     s.cells[idx(s, x, y)] = p;
     p.acted = true;
     p.moved = true;
+    if (s.chess && p.type === 'pawn' && Math.abs(y - res.from.y) === 2) s.ep = { x, y: (y + res.from.y) / 2, pawnY: y, color: p.color, turnNo: s.turnNo };
+    if (promotes) { p.type = promo; p.lvl = 0; res.promoted = promo; }
     if (m.castle) {
       const rook = s.cells[idx(s, m.castle.rookFrom.x, m.castle.rookFrom.y)];
       s.cells[idx(s, rook.x, rook.y)] = null;
@@ -496,7 +513,7 @@
 
   function toJSON(s) {
     return { size: s.size, turn: s.turn, actionsLeft: s.actionsLeft, turnNo: s.turnNo, winner: s.winner, nextId: s.nextId,
-      last: s.last, pending: s.pending, bank: s.bank, result: s.result,
+      last: s.last, pending: s.pending, bank: s.bank, result: s.result, ep: s.ep,
       pieces: s.pieces.map((p) => [p.id, p.type, p.color, p.x, p.y, p.lvl, p.acted ? 1 : 0, p.frozen ? 1 : 0, p.lifeSpent ? 1 : 0, p.moved ? 1 : 0]) };
   }
 
@@ -506,7 +523,7 @@
     const s = { size: j.size, h, pad, cells: new Array(j.size * h).fill(null), pieces: [], turn: j.turn, actionsLeft: j.actionsLeft,
       turnNo: j.turnNo, winner: j.winner, nextId: j.nextId, last: j.last,
       pending: { w: (j.pending && j.pending.w) || [], b: (j.pending && j.pending.b) || [] }, bank: j.bank || { w: 0, b: 0 },
-      chess: j.size <= 8, check: false, result: j.result || null };
+      chess: j.size <= 8, check: false, result: j.result || null, ep: j.ep || null };
     if (!Array.isArray(s.pending.w) || !Array.isArray(s.pending.b)) throw new Error('bad save');
     for (const [id, type, color, x, y, lvl, acted, frozen, lifeSpent, moved] of j.pieces) {
       if (!TYPES[type] || !inside(s, x, y)) throw new Error('bad save');
@@ -518,7 +535,7 @@
     return s;
   }
 
-  root.Evo = { TYPES, UPGRADES, SIZES, MOVE_PAY, CAPTURE_PAY, POCKET_H, newGame, pocket, inside, inPocket, freePocketSquares,
+  root.Evo = { TYPES, UPGRADES, SIZES, PROMOTIONS, MOVE_PAY, CAPTURE_PAY, POCKET_H, newGame, pocket, inside, inPocket, freePocketSquares,
     moves, shots, legalMoves, legalShots, inCheck, canPass, hasLegalAction, move, shoot, buy, place, endTurn, attacked,
     pieceAt, other, actionsFor, hasUpgrade, nextUpgrade, toJSON, fromJSON, hasAnyMove };
   if (typeof module !== 'undefined') module.exports = root.Evo;

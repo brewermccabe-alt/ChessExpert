@@ -62,6 +62,8 @@
         } else if (king) {
           score += (distBefore - cheb(m, king)) * (p.type === 'pawn' ? 0.6 : 0.4);
         }
+        if (m.ep) score += 10; // en passant takes a pawn
+        if (s.chess && p.type === 'pawn' && m.y === (me === 'w' ? 0 : s.h - 1)) score += 60; // promotion
         score += Math.random() * 0.5;
         if (!best || score > best.score) best = { score, type: 'move', id: p.id, x: m.x, y: m.y };
       }

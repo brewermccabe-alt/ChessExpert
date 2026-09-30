@@ -212,6 +212,111 @@ for (const size of E.SIZES) {
   // and the big boards keep the old rule: no legality filter
   const bigB = E.newGame(24);
   assert.strictEqual(E.legalMoves(bigB, E.pieceAt(bigB, 10, 26)).length, E.moves(bigB, E.pieceAt(bigB, 10, 26)).length);
+
+  // ---- en passant ----
+  const epMoves = (st, name) => E.legalMoves(st, E.pieceAt(st, ...sq(name))).filter((m) => m.ep);
+  const epBase = () => { const st = pos([['king', 'w', 'e1'], ['king', 'b', 'e8'], ['pawn', 'w', 'e5'], ['pawn', 'b', 'd7']]); E.endTurn(st); return st; };
+  s = epBase();
+  assert.ok(E.move(s, E.pieceAt(s, ...sq('d7')).id, ...to('d5')));
+  assert.ok(s.ep && s.ep.y === sq('d6')[1], 'a two-square pawn move records the passed square');
+  let em = epMoves(s, 'e5');
+  assert.deepStrictEqual(em.map((m) => [m.x, m.y]), [sq('d6')], 'en passant is offered on the passed square');
+  const bankBefore = s.bank.w;
+  const whitePawn = E.pieceAt(s, ...sq('e5'));
+  const epRes = E.move(s, whitePawn.id, ...to('d6'));
+  assert.ok(epRes && epRes.enPassant && epRes.captured === 'pawn');
+  assert.strictEqual(E.pieceAt(s, ...sq('d5')), null, 'the captured pawn is removed');
+  assert.strictEqual(E.pieceAt(s, ...sq('d6')), whitePawn);
+  assert.deepStrictEqual(s.pending.b, ['pawn']);
+  assert.strictEqual(s.bank.w, bankBefore + E.CAPTURE_PAY, 'en passant pays like a capture');
+  // it is only available immediately
+  s = epBase();
+  E.move(s, E.pieceAt(s, ...sq('d7')).id, ...to('d5'));
+  E.move(s, E.pieceAt(s, ...sq('e1')).id, ...to('e2'));      // White plays something else
+  E.move(s, E.pieceAt(s, ...sq('e8')).id, ...to('f8'));
+  assert.strictEqual(epMoves(s, 'e5').length, 0, 'the chance has gone');
+  // it also lapses if both sides pass (all pieces frozen) instead of moving
+  s = epBase();
+  E.move(s, E.pieceAt(s, ...sq('d7')).id, ...to('d5'));
+  E.endTurn(s);   // White passes
+  E.endTurn(s);   // Black passes: it is White's turn again, two plies after the pawn move
+  assert.strictEqual(epMoves(s, 'e5').length, 0, 'an old en passant chance does not come back');
+  // not after a one-square move
+  s = pos([['king', 'w', 'e1'], ['king', 'b', 'e8'], ['pawn', 'w', 'e5'], ['pawn', 'b', 'd6']]);
+  E.endTurn(s);
+  E.move(s, E.pieceAt(s, ...sq('d6')).id, ...to('d5'));
+  assert.strictEqual(epMoves(s, 'e5').length, 0, 'a one-square move cannot be captured en passant');
+  // only by an adjacent pawn
+  s = pos([['king', 'w', 'e1'], ['king', 'b', 'e8'], ['pawn', 'w', 'f5'], ['pawn', 'b', 'd7']]);
+  E.endTurn(s);
+  E.move(s, E.pieceAt(s, ...sq('d7')).id, ...to('d5'));
+  assert.strictEqual(epMoves(s, 'f5').length, 0, 'not adjacent');
+  // survives saving and loading
+  s = epBase();
+  E.move(s, E.pieceAt(s, ...sq('d7')).id, ...to('d5'));
+  const reloaded = E.fromJSON(JSON.parse(JSON.stringify(E.toJSON(s))));
+  assert.strictEqual(epMoves(reloaded, 'e5').length, 1, 'en passant chance survives a save');
+  // illegal if it would expose the King along the rank (the classic horizontal pin)
+  s = pos([['king', 'w', 'a5'], ['pawn', 'w', 'e5'], ['rook', 'b', 'h5'], ['king', 'b', 'e8'], ['pawn', 'b', 'd7']]);
+  E.endTurn(s);
+  E.move(s, E.pieceAt(s, ...sq('d7')).id, ...to('d5'));
+  assert.strictEqual(epMoves(s, 'e5').length, 0, 'en passant would expose the King, so it is illegal');
+  assert.ok(E.legalMoves(s, E.pieceAt(s, ...sq('e5'))).some((m) => m.y === sq('e6')[1] && !m.ep), 'an ordinary pawn move is still fine');
+  // a jet-engine pawn's two-square move can also be taken en passant
+  s = pos([['king', 'w', 'e1'], ['king', 'b', 'e8'], ['pawn', 'w', 'e4'], ['pawn', 'b', 'd6', true, 1]]);
+  E.endTurn(s);
+  assert.ok(E.move(s, E.pieceAt(s, ...sq('d6')).id, ...to('d4')));
+  assert.strictEqual(epMoves(s, 'e4').length, 1, 'jet pawn two-step from mid-board');
+  // big boards have no en passant
+  const bp = build([['pawn', 'w', 10, 10], ['pawn', 'b', 11, 8, 1]]);
+  bp.turn = 'b';
+  E.move(bp, at(bp, 11, 8).id, 11, 10);
+  assert.ok(!E.moves(bp, at(bp, 10, 10)).some((m) => m.capture), 'no en passant on the big boards');
+
+  // ---- promotion ----
+  const promoteBase = () => pos([['king', 'w', 'e1'], ['king', 'b', 'h8'], ['pawn', 'w', 'a7']]);
+  s = promoteBase();
+  let pp = E.pieceAt(s, ...sq('a7'));
+  let pr = E.move(s, pp.id, ...to('a8'));
+  assert.ok(pr && pr.promoted === 'queen', 'promotes to a Queen by default');
+  assert.strictEqual(pp.type, 'queen');
+  assert.ok(s.check, 'the new queen gives check along the eighth rank');
+  for (const kind of ['rook', 'bishop', 'knight']) {
+    s = promoteBase(); pp = E.pieceAt(s, ...sq('a7'));
+    assert.ok(E.move(s, pp.id, ...to('a8'), kind));
+    assert.strictEqual(pp.type, kind, 'promotes to ' + kind);
+  }
+  s = promoteBase(); pp = E.pieceAt(s, ...sq('a7'));
+  assert.strictEqual(E.move(s, pp.id, ...to('a8'), 'king'), null, 'cannot promote to a King');
+  assert.strictEqual(E.move(s, pp.id, ...to('a8'), 'pawn'), null, 'cannot stay a pawn');
+  assert.strictEqual(pp.type, 'pawn'); assert.deepStrictEqual([pp.x, pp.y], sq('a7'), 'a rejected promotion changes nothing');
+  assert.deepStrictEqual(E.PROMOTIONS, ['queen', 'rook', 'bishop', 'knight']);
+  // by capture, and the pawn's upgrades are not carried over
+  s = pos([['king', 'w', 'e1'], ['king', 'b', 'h8'], ['pawn', 'w', 'a7', true, 3], ['rook', 'b', 'b8']]);
+  pp = E.pieceAt(s, ...sq('a7'));
+  const promoCap = E.move(s, pp.id, ...to('b8'), 'rook');
+  assert.ok(promoCap.captured === 'rook' && promoCap.promoted === 'rook');
+  assert.strictEqual(pp.lvl, 0, 'a promoted piece starts un-upgraded');
+  assert.deepStrictEqual(s.pending.b, ['rook']);
+  // Black promotes on the first rank
+  s = pos([['king', 'w', 'e1'], ['king', 'b', 'e8'], ['pawn', 'b', 'a2']]);
+  E.endTurn(s);
+  pp = E.pieceAt(s, ...sq('a2'));
+  assert.ok(E.move(s, pp.id, ...to('a1'), 'knight'));
+  assert.strictEqual(pp.type, 'knight');
+  // a sword pawn can promote by capturing straight ahead, and a jet pawn can promote from two squares away
+  s = pos([['king', 'w', 'e1'], ['king', 'b', 'h8'], ['pawn', 'w', 'a7', true, 2], ['knight', 'b', 'a8']]);
+  pp = E.pieceAt(s, ...sq('a7'));
+  assert.ok(E.move(s, pp.id, ...to('a8')));
+  assert.strictEqual(pp.type, 'queen');
+  s = pos([['king', 'w', 'e1'], ['king', 'b', 'h8'], ['pawn', 'w', 'c6', true, 1]]);
+  pp = E.pieceAt(s, ...sq('c6'));
+  assert.ok(E.move(s, pp.id, ...to('c8')));
+  assert.strictEqual(pp.type, 'queen', 'a jet pawn promotes on a two-square jump');
+  // big boards do not promote
+  const bigPromo = build([['pawn', 'w', 10, 3]]);
+  assert.ok(E.move(bigPromo, at(bigPromo, 10, 3).id, 10, 2));
+  assert.strictEqual(at(bigPromo, 10, 2).type, 'pawn', 'no promotion on the big boards');
 }
 
 // ---------- pawn basics, bank ----------

@@ -22,31 +22,31 @@
   /* Fixed upgrade path per piece, bought in order. Costs are in chess money. */
   const UPGRADES = {
     pawn: [
-      { id: 'jet', name: 'Jet engine', cost: 150, icon: '🚀', desc: 'Can move 1 or 2 squares forward on any turn.' },
-      { id: 'sword', name: 'Sword', cost: 200, icon: '⚔️', desc: 'Can capture straight ahead as well as diagonally.' },
-      { id: 'halo', name: 'Halo', cost: 150, icon: '😇', desc: 'Can capture on either forward diagonal without moving.' },
+      { id: 'jet', name: 'Jet engine', cost: 75, icon: '🚀', desc: 'Can move 1 or 2 squares forward on any turn.' },
+      { id: 'sword', name: 'Sword', cost: 100, icon: '⚔️', desc: 'Can capture straight ahead as well as diagonally.' },
+      { id: 'halo', name: 'Halo', cost: 75, icon: '😇', desc: 'Can capture on either forward diagonal without moving.' },
     ],
     knight: [
-      { id: 'life', name: 'Extra life', cost: 300, icon: '❤️', desc: 'When captured (once), returns to your pocket at once and keeps its upgrades.' },
-      { id: 'extend', name: 'Extending potion', cost: 400, icon: '🧪', desc: 'Can also move twice in the same direction: a double knight leap.' },
-      { id: 'bow', name: 'Bow', cost: 400, icon: '🏹', desc: 'Can shoot an enemy up to 3 squares away diagonally, without moving.' },
-      { id: 'mage', name: "Bishop's mage", cost: 700, icon: '🧙', desc: 'After its move, it can also slide diagonally from the square it lands on.' },
+      { id: 'life', name: 'Extra life', cost: 150, icon: '❤️', desc: 'When captured (once), returns to your pocket at once and keeps its upgrades.' },
+      { id: 'extend', name: 'Extending potion', cost: 200, icon: '🧪', desc: 'Can also move twice in the same direction: a double knight leap.' },
+      { id: 'bow', name: 'Bow', cost: 200, icon: '🏹', desc: 'Can shoot an enemy up to 3 squares away diagonally, without moving.' },
+      { id: 'mage', name: "Bishop's mage", cost: 350, icon: '🧙', desc: 'After its move, it can also slide diagonally from the square it lands on.' },
     ],
     bishop: [
-      { id: 'freeze', name: 'Freeze potion', cost: 500, icon: '🧊', desc: 'At the end of your turn, adjacent enemy pieces are frozen for their next turn.' },
-      { id: 'steroids', name: 'Steroids', cost: 600, icon: '💪', desc: 'Moves like a queen. Keeps the freeze.' },
+      { id: 'freeze', name: 'Freeze potion', cost: 250, icon: '🧊', desc: 'At the end of your turn, adjacent enemy pieces are frozen for their next turn.' },
+      { id: 'steroids', name: 'Steroids', cost: 300, icon: '💪', desc: 'Moves like a queen. Keeps the freeze.' },
     ],
     rook: [
-      { id: 'cannon', name: 'Cannon', cost: 500, icon: '💣', desc: 'Can fire at an enemy up to 3 squares to its left or right, without moving.' },
-      { id: 'castle', name: 'Castle', cost: 400, icon: '🏰', desc: 'Can also capture a piece directly behind another piece in a straight line.' },
+      { id: 'cannon', name: 'Cannon', cost: 250, icon: '💣', desc: 'Can fire at an enemy up to 3 squares to its left or right, without moving.' },
+      { id: 'castle', name: 'Castle', cost: 200, icon: '🏰', desc: 'Can also capture a piece directly behind another piece in a straight line.' },
     ],
     queen: [
-      { id: 'katana', name: 'Katana', cost: 200, icon: '🗡️', desc: 'Can capture any adjacent piece without moving.' },
-      { id: 'horse', name: "Horse's head", cost: 400, icon: '🐴', desc: 'Also moves like a knight.' },
-      { id: 'wings', name: 'Wings', cost: 700, icon: '🪽', desc: 'Flies over pieces, but cannot capture in a move that flew over a piece.' },
+      { id: 'katana', name: 'Katana', cost: 100, icon: '🗡️', desc: 'Can capture any adjacent piece without moving.' },
+      { id: 'horse', name: "Horse's head", cost: 200, icon: '🐴', desc: 'Also moves like a knight.' },
+      { id: 'wings', name: 'Wings', cost: 350, icon: '🪽', desc: 'Flies over pieces, but cannot capture in a move that flew over a piece.' },
     ],
     king: [
-      { id: 'arm', name: 'Long arm', cost: 250, icon: '🦾', desc: 'Can shoot an enemy up to 2 squares away in any direction, without moving.' },
+      { id: 'arm', name: 'Long arm', cost: 125, icon: '🦾', desc: 'Can shoot an enemy up to 2 squares away in any direction, without moving.' },
     ],
   };
 

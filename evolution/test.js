@@ -54,13 +54,13 @@ assert.strictEqual(s.bank.w, 2000 + E.CAPTURE_PAY);
 assert.deepStrictEqual(s.pending.b, ['pawn']);
 
 // ---------- shop ----------
-s = build([['pawn', 'w', 10, 12]], { bank: { w: 340, b: 0 } });
+s = build([['pawn', 'w', 10, 12]], { bank: { w: 170, b: 0 } });
 const wpawn = at(s, 10, 12);
 assert.strictEqual(E.nextUpgrade(wpawn).id, 'jet');
 assert.ok(E.buy(s, wpawn.id));
-assert.strictEqual(s.bank.w, 190);
-assert.strictEqual(E.buy(s, wpawn.id), null, 'sword costs 200, only 190 left');
-s.bank.w = 200;
+assert.strictEqual(s.bank.w, 95);
+assert.strictEqual(E.buy(s, wpawn.id), null, 'sword costs 100, only 95 left');
+s.bank.w = 100;
 assert.ok(E.buy(s, wpawn.id));
 assert.ok(E.hasUpgrade(wpawn, 'jet') && E.hasUpgrade(wpawn, 'sword') && !E.hasUpgrade(wpawn, 'halo'));
 s.bank.w = 1000;
@@ -68,10 +68,10 @@ assert.ok(E.buy(s, wpawn.id));
 assert.strictEqual(E.nextUpgrade(wpawn), null, 'pawn path is finished');
 assert.strictEqual(E.buy(s, wpawn.id), null);
 assert.strictEqual(E.buy(s, 2), null, 'cannot buy for the enemy King on your turn');
-// Costs match the video
+// Costs are half the original video's
 const costs = (t) => E.UPGRADES[t].map((u) => u.cost);
 assert.deepStrictEqual([costs('pawn'), costs('knight'), costs('bishop'), costs('rook'), costs('queen'), costs('king')],
-  [[150, 200, 150], [300, 400, 400, 700], [500, 600], [500, 400], [200, 400, 700], [250]]);
+  [[75, 100, 75], [150, 200, 200, 350], [250, 300], [250, 200], [100, 200, 350], [125]]);
 
 // ---------- pawn: sword, halo ----------
 s = build([['pawn', 'w', 10, 12, 0], ['pawn', 'b', 10, 11], ['pawn', 'w', 14, 12, 2], ['pawn', 'b', 14, 11], ['pawn', 'b', 14, 10]]);

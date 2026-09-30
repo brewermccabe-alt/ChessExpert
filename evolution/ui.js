@@ -225,6 +225,7 @@
         ctx.fillRect(start + i * w + 1, py + s * 0.9, w - 2, Math.max(2, s * 0.06));
       }
     }
+    if (p.upgrading && s >= 16) { ctx.font = `${s * 0.34}px ${EMOJI_FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('⏳', px + s * 0.8, py + s * 0.8); }
     if (p.frozen) {
       ctx.beginPath(); ctx.arc(cx, cy, s * 0.45, 0, 7);
       ctx.fillStyle = 'rgba(120,200,255,.5)'; ctx.fill();
@@ -296,12 +297,13 @@
       const p = sel, T = E.TYPES[p.type], list = E.UPGRADES[p.type] || [];
       const mine = p.color === state.turn && myTurn();
       let h = `<div class="name">${SIDE[p.color]} ${T.name}</div>`;
-      h += `<div class="muted">Level ${p.lvl} of ${list.length}</div>`;
+      h += `<div class="muted">Level ${p.lvl} of ${list.length}${p.upgrading ? ' (upgrade on its way)' : ''}</div>`;
       if (p.frozen) h += '<div class="frozen">❄️ Frozen: cannot move or fire this turn.</div>';
       h += '<div class="ups">' + list.map((u, i) => {
-        const cls = i < p.lvl ? 'owned' : i === p.lvl ? 'next' : 'locked';
-        let buy = '';
-        if (i === p.lvl && mine) {
+        const queued = p.upgrading && i === p.lvl;
+        const cls = i < p.lvl ? 'owned' : queued ? 'queued' : i === p.lvl ? 'next' : 'locked';
+        let buy = queued ? '<div class="muted"><b>⏳ Bought: arrives at the end of the turn.</b></div>' : '';
+        if (i === p.lvl && !p.upgrading && mine) {
           const need = u.cost - state.bank[p.color];
           buy = need <= 0 ? `<button type="button" data-buy class="buy">Buy for ${money(u.cost)}</button>` : `<div class="muted">Need ${money(need)} more</div>`;
         }
@@ -370,7 +372,7 @@
   function doBuy(p) {
     const r = E.buy(state, p.id);
     if (!r) return;
-    log(`${SIDE[p.color][0]}: ${E.TYPES[r.piece].name} buys ${r.upgrade.icon} ${r.upgrade.name} (−${money(r.upgrade.cost)}).`, 'evo');
+    log(`${SIDE[p.color][0]}: ${E.TYPES[r.piece].name} buys ${r.upgrade.icon} ${r.upgrade.name} (−${money(r.upgrade.cost)}); it arrives at the end of the turn.`, 'evo');
     select(p, true);
     refresh();
   }
@@ -401,7 +403,7 @@
       const turnBefore = state.turn;
       if (a.type === 'buy') {
         const r = E.buy(state, a.id);
-        if (r) log(`B: ${E.TYPES[r.piece].name} buys ${r.upgrade.icon} ${r.upgrade.name} (−${money(r.upgrade.cost)}).`, 'evo');
+        if (r) log(`B: ${E.TYPES[r.piece].name} buys ${r.upgrade.icon} ${r.upgrade.name} (−${money(r.upgrade.cost)}); it arrives at the end of the turn.`, 'evo');
         refresh(); setTimeout(step, 250); return;
       }
       if (a.type === 'end') {

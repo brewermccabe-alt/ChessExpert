@@ -6,6 +6,8 @@
  *  - On the classic 8x8 board the full chess rules apply: check, checkmate, stalemate, castling, en passant and
  *    pawn promotion. On the big boards
  *    there is no check: capture the King.
+ *  - An upgrade you buy is paid for at once but only takes effect at the END of your turn, so it can't be used the
+ *    turn it is bought.
  *  - Each side has a bank of "chess money": +50 for a move, +150 for a capture. Spend it on a fixed upgrade path for
  *    each piece (a shop, no XP).
  *  - A captured piece returns to its owner's pocket (owner picks the square, and placing it uses an action) as a
@@ -90,7 +92,10 @@
     const i = list.findIndex((u) => u.id === id);
     return i >= 0 && i < p.lvl;
   };
-  const nextUpgrade = (p) => (UPGRADES[p.type] && UPGRADES[p.type][p.lvl]) || null;
+  /* The next upgrade that can be bought (none while one is already on its way). */
+  const nextUpgrade = (p) => (!p.upgrading && UPGRADES[p.type] && UPGRADES[p.type][p.lvl]) || null;
+  /* The upgrade bought this turn that takes effect at the end of the turn, if any. */
+  const queuedUpgrade = (p) => (p.upgrading && UPGRADES[p.type] && UPGRADES[p.type][p.lvl]) || null;
 
   function newGame(size) {
     if (!SIZES.includes(size)) size = 40;
@@ -133,7 +138,7 @@
   }
 
   function add(s, type, color, x, y) {
-    const p = { id: s.nextId++, type, color, x, y, lvl: 0, acted: false, frozen: false, lifeSpent: false, moved: false };
+    const p = { id: s.nextId++, type, color, x, y, lvl: 0, acted: false, frozen: false, lifeSpent: false, moved: false, upgrading: false };
     s.pieces.push(p);
     s.cells[idx(s, x, y)] = p;
     return p;
@@ -367,6 +372,8 @@
   function endTurn(s) {
     if (s.winner) return;
     const ending = s.turn, foe = other(ending);
+    // Upgrades bought this turn take effect now.
+    for (const p of s.pieces) if (p.color === ending && p.upgrading) { p.lvl++; p.upgrading = false; }
     // A freeze on the ending side's pieces has run its one turn.
     for (const p of s.pieces) if (p.color === ending) p.frozen = false;
     // Freeze-potion bishops freeze adjacent enemies for their next turn.
@@ -488,14 +495,14 @@
     return res;
   }
 
-  /* Buy the next upgrade for piece `id` (free action; costs chess money). */
+  /* Buy the next upgrade for piece `id` (free action; costs chess money; takes effect at the end of your turn). */
   function buy(s, id) {
     const p = s.pieces.find((q) => q.id === id);
     if (!p || s.winner || p.color !== s.turn) return null;
     const u = nextUpgrade(p);
     if (!u || s.bank[p.color] < u.cost) return null;
     s.bank[p.color] -= u.cost;
-    p.lvl++;
+    p.upgrading = true; // takes effect at the end of this turn
     return { id, piece: p.type, upgrade: u };
   }
 
@@ -520,7 +527,7 @@
   function toJSON(s) {
     return { size: s.size, turn: s.turn, actionsLeft: s.actionsLeft, turnNo: s.turnNo, winner: s.winner, nextId: s.nextId,
       last: s.last, pending: s.pending, bank: s.bank, result: s.result, ep: s.ep,
-      pieces: s.pieces.map((p) => [p.id, p.type, p.color, p.x, p.y, p.lvl, p.acted ? 1 : 0, p.frozen ? 1 : 0, p.lifeSpent ? 1 : 0, p.moved ? 1 : 0]) };
+      pieces: s.pieces.map((p) => [p.id, p.type, p.color, p.x, p.y, p.lvl, p.acted ? 1 : 0, p.frozen ? 1 : 0, p.lifeSpent ? 1 : 0, p.moved ? 1 : 0, p.upgrading ? 1 : 0]) };
   }
 
   function fromJSON(j) {
@@ -531,9 +538,9 @@
       pending: { w: (j.pending && j.pending.w) || [], b: (j.pending && j.pending.b) || [] }, bank: j.bank || { w: 0, b: 0 },
       chess: j.size <= 8, check: false, result: j.result || null, ep: j.ep || null };
     if (!Array.isArray(s.pending.w) || !Array.isArray(s.pending.b)) throw new Error('bad save');
-    for (const [id, type, color, x, y, lvl, acted, frozen, lifeSpent, moved] of j.pieces) {
+    for (const [id, type, color, x, y, lvl, acted, frozen, lifeSpent, moved, upgrading] of j.pieces) {
       if (!TYPES[type] || !inside(s, x, y)) throw new Error('bad save');
-      const p = { id, type, color, x, y, lvl: lvl || 0, acted: !!acted, frozen: !!frozen, lifeSpent: !!lifeSpent, moved: !!moved };
+      const p = { id, type, color, x, y, lvl: lvl || 0, acted: !!acted, frozen: !!frozen, lifeSpent: !!lifeSpent, moved: !!moved, upgrading: !!upgrading };
       s.pieces.push(p);
       s.cells[idx(s, x, y)] = p;
     }
@@ -543,6 +550,6 @@
 
   root.Evo = { TYPES, UPGRADES, SIZES, PROMOTIONS, MOVE_PAY, CAPTURE_PAY, POCKET_H, newGame, pocket, inside, inPocket, freePocketSquares,
     moves, shots, legalMoves, legalShots, inCheck, canPass, canPlaceNow, hasLegalAction, move, shoot, buy, place, endTurn, attacked,
-    pieceAt, other, actionsFor, hasUpgrade, nextUpgrade, toJSON, fromJSON, hasAnyMove };
+    pieceAt, other, actionsFor, hasUpgrade, nextUpgrade, queuedUpgrade, toJSON, fromJSON, hasAnyMove };
   if (typeof module !== 'undefined') module.exports = root.Evo;
 })(typeof window !== 'undefined' ? window : globalThis);

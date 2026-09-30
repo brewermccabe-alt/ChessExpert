@@ -7,6 +7,8 @@ const S = 24;                 // board width used by most tests
 const WP = S + 2;             // white pawn row (front row of white's pocket)
 const has = (list, x, y) => list.some((m) => m.x === x && m.y === y);
 const at = (s, x, y) => E.pieceAt(s, x, y);
+/* settle(): your turn ends (queued upgrades arrive) and the other side passes back to you. */
+const settle = (st) => { E.endTurn(st); E.endTurn(st); };
 
 /* Build a clean position: both Kings in their pockets plus the listed pieces [type, color, x, y, lvl]. */
 function build(list, extra) {
@@ -372,6 +374,34 @@ for (const size of E.SIZES) {
   assert.ok(!E.canPlaceNow(chk, 'w') && E.place(chk, 0, 6, 'pawn') === null);
 }
 
+// ---------- an upgrade cannot be used the turn it is bought ----------
+{
+  // A halo pawn cannot fire on the turn the halo is bought
+  const hs = build([['pawn', 'w', 12, 12, 2], ['pawn', 'b', 11, 11]]);
+  const hp = at(hs, 12, 12);
+  assert.ok(E.buy(hs, hp.id));
+  assert.strictEqual(E.legalShots(hs, hp).length, 0, 'no halo yet this turn');
+  assert.strictEqual(E.shoot(hs, hp.id, 11, 11), null);
+  settle(hs);
+  assert.strictEqual(E.legalShots(hs, hp).length, 1, 'the halo works from your next turn');
+  assert.ok(E.shoot(hs, hp.id, 11, 11));
+  // It lands before check is worked out: a cannon bought this turn gives check when the turn ends (8x8)
+  const cs = E.fromJSON({ size: 8, turn: 'w', actionsLeft: 1, turnNo: 1, winner: null, nextId: 6, last: null, pending: { w: [], b: [] },
+    bank: { w: 300, b: 0 }, pieces: [[1, 'king', 'w', 4, 7, 0, 0, 0, 0, 0], [2, 'king', 'b', 3, 0, 0, 0, 0, 0, 0], [3, 'rook', 'w', 0, 0, 0, 0, 0, 0, 0],
+      [4, 'pawn', 'b', 1, 0, 0, 0, 0, 0, 0]] });
+  assert.ok(!E.inCheck(cs, 'b'), 'a pawn blocks the rook: no check yet');
+  assert.ok(E.buy(cs, 3));
+  assert.ok(!E.inCheck(cs, 'b'), 'the cannon is not active this turn');
+  assert.ok(E.move(cs, 1, 4, 6));        // White makes a quiet move; the turn ends and the cannon arrives
+  assert.strictEqual(cs.turn, 'b');
+  assert.ok(cs.check, 'the cannon now attacks over the pawn: Black is in check');
+  // An unspent queued upgrade is saved and restored
+  const q = build([['rook', 'w', 12, 12]], { bank: { w: 500, b: 0 } });
+  E.buy(q, at(q, 12, 12).id);
+  const q2 = E.fromJSON(JSON.parse(JSON.stringify(E.toJSON(q))));
+  assert.ok(at(q2, 12, 12).upgrading && E.queuedUpgrade(at(q2, 12, 12)).id === 'cannon');
+}
+
 // ---------- pawn basics, bank ----------
 let s = E.newGame(S);
 const pw = at(s, 10, WP);
@@ -392,17 +422,28 @@ assert.strictEqual(s.bank.w, 2000 + E.CAPTURE_PAY);
 assert.deepStrictEqual(s.pending.b, ['pawn']);
 
 // ---------- shop ----------
+// An upgrade is paid for at once but takes effect at the end of your turn.
 s = build([['pawn', 'w', 10, 12]], { bank: { w: 145, b: 0 } });
 const wpawn = at(s, 10, 12);
 assert.strictEqual(E.nextUpgrade(wpawn).id, 'jet');
 assert.ok(E.buy(s, wpawn.id));
+assert.strictEqual(s.bank.w, 95, 'paid at once');
+assert.ok(!E.hasUpgrade(wpawn, 'jet'), 'but not usable yet');
+assert.ok(wpawn.upgrading && E.queuedUpgrade(wpawn).id === 'jet');
+assert.strictEqual(E.nextUpgrade(wpawn), null, 'one upgrade at a time');
+assert.strictEqual(E.buy(s, wpawn.id), null, 'cannot buy again while one is on its way');
 assert.strictEqual(s.bank.w, 95);
+settle(s);
+assert.ok(E.hasUpgrade(wpawn, 'jet') && !wpawn.upgrading, 'it arrived at the end of the turn');
 assert.strictEqual(E.buy(s, wpawn.id), null, 'sword costs 100, only 95 left');
 s.bank.w = 100;
 assert.ok(E.buy(s, wpawn.id));
+settle(s);
 assert.ok(E.hasUpgrade(wpawn, 'jet') && E.hasUpgrade(wpawn, 'sword') && !E.hasUpgrade(wpawn, 'halo'));
 s.bank.w = 1000;
 assert.ok(E.buy(s, wpawn.id));
+settle(s);
+assert.ok(E.hasUpgrade(wpawn, 'halo'));
 assert.strictEqual(E.nextUpgrade(wpawn), null, 'pawn path is finished');
 assert.strictEqual(E.buy(s, wpawn.id), null);
 assert.strictEqual(E.buy(s, 2), null, 'cannot buy for the enemy King on your turn');

@@ -76,3 +76,4 @@ button.fire { display: block; width: 100%; margin-top: 8px; background: #e8712a;
 button.fire.on { background: #7a3510; border-color: #7a3510; }
 .evolves button.on { outline: 2px solid var(--ink); }
 #upgrade-list { padding-left: 16px; }
+.up.queued { background: rgba(217,165,32,.14); border-radius: 6px; }

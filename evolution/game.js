@@ -8,7 +8,8 @@
  *    there is no check: capture the King.
  *  - Each side has a bank of "chess money": +50 for a move, +150 for a capture. Spend it on a fixed upgrade path for
  *    each piece (a shop, no XP).
- *  - A captured piece returns to its owner's pocket (owner picks the square) as a plain, un-upgraded piece. The
+ *  - A captured piece returns to its owner's pocket (owner picks the square, and placing it uses an action) as a
+ *    plain, un-upgraded piece. The
  *    Knight's Extra life is the exception: it returns at once with its upgrades. */
 (function (root) {
   'use strict';
@@ -36,7 +37,7 @@
       { id: 'mage', name: "Bishop's mage", cost: 350, icon: '🧙', desc: 'After its move, it can also slide diagonally from the square it lands on.' },
     ],
     bishop: [
-      { id: 'freeze', name: 'Freeze potion', cost: 250, icon: '🧊', desc: 'At the end of your turn, adjacent enemy pieces are frozen for their next turn.' },
+      { id: 'freeze', name: 'Freeze potion', cost: 250, icon: '🧊', desc: 'At the end of your turn, adjacent enemy pieces are frozen for their next turn. The King cannot be frozen.' },
       { id: 'steroids', name: 'Steroids', cost: 300, icon: '💪', desc: 'Moves like a queen. Keeps the freeze.' },
     ],
     rook: [
@@ -351,7 +352,11 @@
     return list.filter((m) => safeAfterShot(s, p, m.x, m.y));
   }
 
+  /* Can `color` place a waiting piece now? (Not while in check on the chess board.) */
+  const canPlaceNow = (s, color) => s.pending[color].length > 0 && freePocketSquares(s, color).length > 0 && !(s.chess && inCheck(s, color));
+
   function hasLegalAction(s, color) {
+    if (canPlaceNow(s, color)) return true; // placing a returned piece is an action
     return s.pieces.some((p) => p.color === color && !p.acted && (legalMoves(s, p).length || legalShots(s, p).length));
   }
   const hasAnyMove = hasLegalAction;
@@ -367,7 +372,7 @@
     // Freeze-potion bishops freeze adjacent enemies for their next turn.
     for (const p of s.pieces) {
       if (p.color === ending && p.type === 'bishop' && hasUpgrade(p, 'freeze')) {
-        for (const q of s.pieces) if (q.color === foe && cheb(p, q) === 1) q.frozen = true;
+        for (const q of s.pieces) if (q.color === foe && q.type !== 'king' && cheb(p, q) === 1) q.frozen = true;
       }
     }
     s.turn = foe;
@@ -382,9 +387,7 @@
         for (const q of thawed) q.frozen = false;
         const wouldHaveMoves = hasLegalAction(s, foe);
         for (const q of thawed) q.frozen = true;
-        // A waiting piece can still be placed (not while in check), which may give the side a move.
-        const canPlaceNow = !s.check && s.pending[foe].length > 0 && freePocketSquares(s, foe).length > 0;
-        if (!wouldHaveMoves && !canPlaceNow) {
+        if (!wouldHaveMoves) {
           if (s.check) { s.winner = ending; s.result = 'checkmate'; } else { s.winner = 'draw'; s.result = 'stalemate'; }
         }
       }
@@ -496,9 +499,9 @@
     return { id, piece: p.type, upgrade: u };
   }
 
-  /* Home base: place a waiting piece (of `type`, default the first waiting) on a free square of your pocket. Free. */
+  /* Home base: place a waiting piece (of `type`, default the first waiting) on a free square of your pocket. Uses an action. */
   function place(s, x, y, type) {
-    if (s.winner) return null;
+    if (s.winner || s.actionsLeft <= 0) return null;
     const list = s.pending[s.turn];
     const i = type ? list.indexOf(type) : 0;
     if (!list.length || i < 0) return null;
@@ -508,7 +511,10 @@
     const p = add(s, kind, s.turn, x, y);
     p.moved = true;
     s.last = { from: { x, y }, to: { x, y } };
-    return { id: p.id, x, y, color: p.color, type: kind };
+    const res = { id: p.id, x, y, color: p.color, type: kind };
+    s.actionsLeft--; // placing uses an action (on the 8x8 board, your whole turn)
+    afterAction(s);
+    return res;
   }
 
   function toJSON(s) {
@@ -536,7 +542,7 @@
   }
 
   root.Evo = { TYPES, UPGRADES, SIZES, PROMOTIONS, MOVE_PAY, CAPTURE_PAY, POCKET_H, newGame, pocket, inside, inPocket, freePocketSquares,
-    moves, shots, legalMoves, legalShots, inCheck, canPass, hasLegalAction, move, shoot, buy, place, endTurn, attacked,
+    moves, shots, legalMoves, legalShots, inCheck, canPass, canPlaceNow, hasLegalAction, move, shoot, buy, place, endTurn, attacked,
     pieceAt, other, actionsFor, hasUpgrade, nextUpgrade, toJSON, fromJSON, hasAnyMove };
   if (typeof module !== 'undefined') module.exports = root.Evo;
 })(typeof window !== 'undefined' ? window : globalThis);

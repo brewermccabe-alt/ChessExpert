@@ -41,7 +41,7 @@
   const isHuman = (color) => mode === 'hot' || color === 'w';
   const myTurn = () => !state.winner && !aiBusy && isHuman(state.turn);
   const nameOf = (p) => E.TYPES[p.type].name;
-  const canPlace = () => myTurn() && state.pending[state.turn].length > 0 && E.freePocketSquares(state, state.turn).length > 0 &&
+  const canPlace = () => myTurn() && state.actionsLeft > 0 && state.pending[state.turn].length > 0 && E.freePocketSquares(state, state.turn).length > 0 &&
     !(state.chess && state.check);
   const affordable = (p) => {
     if (state.winner || p.color !== state.turn || !isHuman(p.color) || aiBusy) return false;
@@ -376,11 +376,12 @@
   }
 
   function doPlace(x, y) {
+    const prev = state.turn;
     const r = E.place(state, x, y, placeKind);
     if (!r) return;
     log(`${SIDE[r.color][0]}: a captured ${E.TYPES[r.type].name} returns to its pocket at ${label(x, y)}, without upgrades.`, 'evo');
     sel = null; targets = [];
-    refresh();
+    afterAction(prev);
   }
 
   function endTurn() {
@@ -398,11 +399,6 @@
       if (state.winner || state.turn !== 'b') { aiBusy = false; refresh(); return; }
       const a = AI.chooseAction(state);
       const turnBefore = state.turn;
-      if (a.type === 'place') {
-        const r = E.place(state, a.x, a.y, a.kind);
-        if (r) log(`B: a captured ${E.TYPES[r.type].name} returns to its pocket, without upgrades.`, 'evo');
-        refresh(); setTimeout(step, 250); return;
-      }
       if (a.type === 'buy') {
         const r = E.buy(state, a.id);
         if (r) log(`B: ${E.TYPES[r.piece].name} buys ${r.upgrade.icon} ${r.upgrade.name} (−${money(r.upgrade.cost)}).`, 'evo');
@@ -410,6 +406,9 @@
       }
       if (a.type === 'end') {
         E.endTurn(state);
+      } else if (a.type === 'place') {
+        const r = E.place(state, a.x, a.y, a.kind);
+        if (r) log(`B: a captured ${E.TYPES[r.type].name} returns to its pocket, without upgrades.`, 'evo'); else E.endTurn(state);
       } else {
         const r = a.type === 'shoot' ? E.shoot(state, a.id, a.x, a.y) : E.move(state, a.id, a.x, a.y, a.promo); // the computer promotes to a Queen
         if (r) { log(describeAction(r), (r.captured ? 'cap ' : '') + 'b'); ensureVisible(a.x, a.y); } else E.endTurn(state);

@@ -319,6 +319,59 @@ for (const size of E.SIZES) {
   assert.strictEqual(at(bigPromo, 10, 2).type, 'pawn', 'no promotion on the big boards');
 }
 
+// ---------- freeze never affects a King ----------
+{
+  const fs = build([['bishop', 'w', 12, 12, 1], ['pawn', 'b', 13, 13], ['king', 'b', 11, 11]]);
+  const blackKing = fs.pieces.find((p) => p.color === 'b' && p.type === 'king');
+  blackKing.x = 11; blackKing.y = 11; fs.cells[0 * S + 12] = null; fs.cells[11 * S + 11] = blackKing;   // move the Black King beside the bishop
+  E.endTurn(fs);
+  assert.ok(at(fs, 13, 13).frozen, 'the adjacent pawn is frozen');
+  assert.ok(!blackKing.frozen, 'the adjacent King is not');
+  assert.ok(E.moves(fs, blackKing).length > 0, 'and it can still move');
+  assert.ok(E.UPGRADES.bishop[0].desc.includes('King cannot be frozen'));
+}
+
+// ---------- placing a returned piece uses an action ----------
+{
+  // Big board: uses one of the several actions; the turn continues
+  let ps = build([['rook', 'w', 12, 12]], { pending: { w: ['pawn', 'knight'], b: [] } });
+  const k = E.pocket(ps, 'w');
+  assert.strictEqual(ps.actionsLeft, 5);
+  const placedPawn = E.place(ps, k.x, k.y, 'pawn');
+  assert.ok(placedPawn);
+  assert.strictEqual(ps.actionsLeft, 4, 'placing costs an action');
+  assert.strictEqual(ps.turn, 'w', 'a big-board turn goes on');
+  assert.strictEqual(ps.bank.w, 2000, 'placing earns nothing');
+  assert.ok(E.move(ps, at(ps, 12, 12).id, 12, 10), 'other pieces can still act this turn');
+  // it can be the last action
+  ps.actionsLeft = 1;
+  assert.ok(E.place(ps, k.x + 1, k.y, 'knight'));
+  assert.strictEqual(ps.turn, 'b', 'using the last action ends the turn');
+  assert.strictEqual(E.place(ps, k.x + 2, k.y), null, 'nothing waiting');
+  // no actions left, no placing
+  ps = build([], { pending: { w: ['pawn'], b: [] }, actionsLeft: 0 });
+  assert.strictEqual(E.place(ps, E.pocket(ps, 'w').x, E.pocket(ps, 'w').y), null, 'no actions left');
+  // 8x8: placing is your whole turn
+  const c = E.fromJSON({ size: 8, turn: 'w', actionsLeft: 1, turnNo: 1, winner: null, nextId: 5, last: null, pending: { w: ['queen'], b: [] },
+    bank: { w: 0, b: 0 }, pieces: [[1, 'king', 'w', 4, 7, 0, 0, 0, 0, 0], [2, 'king', 'b', 4, 0, 0, 0, 0, 0, 0], [3, 'pawn', 'w', 0, 6, 0, 0, 0, 0, 0]] });
+  assert.ok(E.canPlaceNow(c, 'w'));
+  assert.ok(!E.canPass(c), 'you must act: placing counts as a move');
+  assert.ok(E.place(c, 3, 7, 'queen'));
+  assert.strictEqual(c.turn, 'b', 'on 8x8 placing ends your turn');
+  assert.ok(!E.pieceAt(c, 3, 7).acted, 'the new piece has not moved');
+  // placing can answer a stalemate: not stalemate while a piece can be placed, even if nothing else can move
+  const sm = E.fromJSON({ size: 8, turn: 'w', actionsLeft: 1, turnNo: 1, winner: null, nextId: 6, last: null, pending: { w: [], b: ['pawn'] },
+    bank: { w: 0, b: 0 }, pieces: [[1, 'king', 'b', 7, 0, 0, 0, 0, 0, 0], [2, 'king', 'w', 5, 1, 0, 0, 0, 0, 0], [3, 'queen', 'w', 6, 4, 0, 0, 0, 0, 0]] });
+  assert.ok(E.move(sm, 3, 6, 2));
+  assert.ok(!sm.winner, 'Black can still place a piece, so this is not stalemate');
+  assert.ok(E.canPlaceNow(sm, 'b') && !E.canPass(sm));
+  assert.ok(E.place(sm, 3, 1, 'pawn') || E.place(sm, 0, 1, 'pawn'), 'Black uses its turn to place');
+  // not while in check
+  const chk = E.fromJSON({ size: 8, turn: 'w', actionsLeft: 1, turnNo: 1, winner: null, nextId: 5, last: null, pending: { w: ['pawn'], b: [] },
+    bank: { w: 0, b: 0 }, pieces: [[1, 'king', 'w', 4, 7, 0, 0, 0, 0, 0], [2, 'king', 'b', 0, 0, 0, 0, 0, 0, 0], [3, 'rook', 'b', 4, 0, 0, 0, 0, 0, 0]] });
+  assert.ok(!E.canPlaceNow(chk, 'w') && E.place(chk, 0, 6, 'pawn') === null);
+}
+
 // ---------- pawn basics, bank ----------
 let s = E.newGame(S);
 const pw = at(s, 10, WP);

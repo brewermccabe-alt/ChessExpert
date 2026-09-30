@@ -54,7 +54,7 @@ assert.strictEqual(s.bank.w, 2000 + E.CAPTURE_PAY);
 assert.deepStrictEqual(s.pending.b, ['pawn']);
 
 // ---------- shop ----------
-s = build([['pawn', 'w', 10, 12]], { bank: { w: 170, b: 0 } });
+s = build([['pawn', 'w', 10, 12]], { bank: { w: 145, b: 0 } });
 const wpawn = at(s, 10, 12);
 assert.strictEqual(E.nextUpgrade(wpawn).id, 'jet');
 assert.ok(E.buy(s, wpawn.id));
@@ -71,7 +71,7 @@ assert.strictEqual(E.buy(s, 2), null, 'cannot buy for the enemy King on your tur
 // Costs are half the original video's
 const costs = (t) => E.UPGRADES[t].map((u) => u.cost);
 assert.deepStrictEqual([costs('pawn'), costs('knight'), costs('bishop'), costs('rook'), costs('queen'), costs('king')],
-  [[75, 100, 75], [150, 200, 200, 350], [250, 300], [250, 200], [100, 200, 350], [125]]);
+  [[50, 100, 50], [150, 200, 200, 350], [250, 300], [250, 200], [100, 200, 350], [150]]);
 
 // ---------- pawn: sword, halo ----------
 s = build([['pawn', 'w', 10, 12, 0], ['pawn', 'b', 10, 11], ['pawn', 'w', 14, 12, 2], ['pawn', 'b', 14, 11], ['pawn', 'b', 14, 10]]);

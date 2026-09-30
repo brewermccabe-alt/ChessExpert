@@ -22,9 +22,9 @@
   /* Fixed upgrade path per piece, bought in order. Costs are in chess money. */
   const UPGRADES = {
     pawn: [
-      { id: 'jet', name: 'Jet engine', cost: 75, icon: '🚀', desc: 'Can move 1 or 2 squares forward on any turn.' },
+      { id: 'jet', name: 'Jet engine', cost: 50, icon: '🚀', desc: 'Can move 1 or 2 squares forward on any turn.' },
       { id: 'sword', name: 'Sword', cost: 100, icon: '⚔️', desc: 'Can capture straight ahead as well as diagonally.' },
-      { id: 'halo', name: 'Halo', cost: 75, icon: '😇', desc: 'Can capture on either forward diagonal without moving.' },
+      { id: 'halo', name: 'Halo', cost: 50, icon: '😇', desc: 'Can capture on either forward diagonal without moving.' },
     ],
     knight: [
       { id: 'life', name: 'Extra life', cost: 150, icon: '❤️', desc: 'When captured (once), returns to your pocket at once and keeps its upgrades.' },
@@ -46,7 +46,7 @@
       { id: 'wings', name: 'Wings', cost: 350, icon: '🪽', desc: 'Flies over pieces, but cannot capture in a move that flew over a piece.' },
     ],
     king: [
-      { id: 'arm', name: 'Long arm', cost: 125, icon: '🦾', desc: 'Can shoot an enemy up to 2 squares away in any direction, without moving.' },
+      { id: 'arm', name: 'Long arm', cost: 150, icon: '🦾', desc: 'Can shoot an enemy up to 2 squares away in any direction, without moving.' },
     ],
   };
 
